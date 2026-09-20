@@ -13,7 +13,7 @@ from modules.modes import BattleAction, BotMode
 
 from jev_plays_emerald.actions import Action, ActionExecutor, FrameState, Outcome
 from jev_plays_emerald.jev import JevChoice, JevGateway, JevGatewayError, JevTimeoutError, JsonValue
-from jev_plays_emerald.opening import RivalProgress, legal_actions
+from jev_plays_emerald.opening import RivalProgress, legal_actions, open_world_spike_enabled
 from jev_plays_emerald.state import Observation, ObservationReader, RecentOutcome
 from jev_plays_emerald.telemetry import DecisionTelemetry
 
@@ -221,7 +221,7 @@ class JevEmeraldMode(BotMode):
                         with self._state_lock:
                             self._active_run = None
                             self._last_started_action = None
-                            if outcome is Outcome.FAILED:
+                            if outcome is Outcome.FAILED and not open_world_spike_enabled():
                                 self._paused = True
                                 self._decision_generation += 1
                                 self._pending_action = None

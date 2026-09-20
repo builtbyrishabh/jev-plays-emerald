@@ -434,5 +434,151 @@ def _battle_run_plan(action: Action) -> ExecutionPlan:
     return ExecutionPlan(run, frozenset({"BATTLE"}), frozenset({"battle"}))
 
 
+
+def _interact_plan(action: Action) -> ExecutionPlan:
+    """Stand next to a map tile, face it and press A.
+
+    Emerald puts clocks, signs, TVs and the PC on tiles you cannot stand on,
+    so the plan walks to whichever neighbouring tile it can actually reach.
+    """
+
+    try:
+        _, x, y = action.id.split(":")
+        target = (int(x), int(y))
+    except ValueError as error:
+        raise ValueError(f"invalid interact action: {action.id}") from error
+
+    def interact() -> Generator[None, None, None]:
+        from modules.context import context
+        from modules.modes.util import ensure_facing_direction
+        from modules.modes.util.walking import TimedOutTryingToReachWaypointError, navigate_to
+        from modules.player import get_player_location
+
+        here, _ = get_player_location()
+        neighbours = (
+            (target[0], target[1] + 1),
+            (target[0] - 1, target[1]),
+            (target[0] + 1, target[1]),
+            (target[0], target[1] - 1),
+        )
+        for spot in neighbours:
+            try:
+                yield from navigate_to(here, spot)
+                break
+            except (TimedOutTryingToReachWaypointError, NavigationBlocked, RuntimeError, ValueError):
+                continue
+        else:
+            raise NavigationBlocked(f"no reachable tile next to {target}")
+        yield from ensure_facing_direction(target)
+        context.emulator.press_button("A")
+        yield
+
+    return ExecutionPlan(
+        interact,
+        frozenset({"OVERWORLD", "CHANGE_MAP"}),
+        frozenset({"none", "script"}),
+        retry_on=(NavigationBlocked,),
+    )
+
+
+def _battle_switch_plan(action: Action) -> ExecutionPlan:
+    """Send out a benched party member, mirroring PokéBot's RotateLead inputs.
+
+    Opening the party list moves the game into PARTY_MENU for a few frames, so
+    that state is allowed alongside BATTLE - otherwise the executor would treat
+    its own menu as an interruption.
+    """
+
+    try:
+        party_index = int(action.id.split(":", 1)[1])
+    except (IndexError, ValueError) as error:
+        raise ValueError(f"invalid battle-switch action: {action.id}") from error
+
+    def switch() -> Generator[None, None, None]:
+        from modules.battle_menuing import scroll_to_battle_action
+        from modules.battle_state import get_battle_state
+        from modules.context import context
+        from modules.memory import GameState, get_game_state
+        from modules.menuing import scroll_to_party_menu_index
+        from modules.pokemon_party import get_party_size
+
+        battle_state = get_battle_state()
+        if party_index >= get_party_size():
+            raise RuntimeError(f"cannot switch to slot {party_index}: the party is smaller")
+        active = battle_state.own_side.active_battler
+        if active is not None and party_index == active.party_index:
+            raise RuntimeError("that Pokémon is already in battle")
+        in_battle_index = battle_state.map_battle_party_index(party_index)
+        yield from scroll_to_battle_action(2)
+        for _ in range(5):
+            yield
+        context.emulator.press_button("A")
+        yield from scroll_to_party_menu_index(in_battle_index)
+        while get_game_state() == GameState.PARTY_MENU:
+            context.emulator.press_button("A")
+            yield
+
+    return ExecutionPlan(switch, frozenset({"BATTLE", "PARTY_MENU"}), frozenset({"battle", "party_menu"}))
+
+
+def _battle_item_plan(action: Action) -> ExecutionPlan:
+    """Use a bag item on the active Pokémon during battle.
+
+    Healing and PP items need a target, so the active battler's party slot is
+    passed; stat items apply to whoever is out and take no target. The bag and
+    party sub-menus move the game out of BATTLE briefly, so both are allowed.
+    """
+
+    try:
+        name = action.id.split(":", 1)[1]
+    except IndexError as error:
+        raise ValueError(f"invalid battle-item action: {action.id}") from error
+    if not name:
+        raise ValueError(f"invalid battle-item action: {action.id}")
+
+    def use_item() -> Generator[None, None, None]:
+        from modules.battle_action_selection import battle_action_use_item
+        from modules.battle_state import get_battle_state
+        from modules.items import ItemBattleUse, get_item_by_name
+
+        item = get_item_by_name(name)
+        battle_state = get_battle_state()
+        target = None
+        if item.battle_use in (ItemBattleUse.Healing, ItemBattleUse.PpRecovery):
+            active = battle_state.own_side.active_battler
+            if active is None:
+                raise RuntimeError(f"{name} needs a target Pokémon, but none is active")
+            target = active.party_index
+        yield from battle_action_use_item(battle_state, item, target)
+
+    return ExecutionPlan(
+        use_item,
+        frozenset({"BATTLE", "BAG_MENU", "PARTY_MENU"}),
+        frozenset({"battle", "bag_menu", "party_menu"}),
+    )
+
+
+def _catch_plan(action: Action) -> ExecutionPlan:
+    """Throw a Poké Ball at the wild opponent. Opens the in-battle bag only."""
+
+    try:
+        name = action.id.split(":", 1)[1]
+    except IndexError as error:
+        raise ValueError(f"invalid catch action: {action.id}") from error
+    if not name:
+        raise ValueError(f"invalid catch action: {action.id}")
+
+    def throw() -> Generator[None, None, None]:
+        from modules.battle_action_selection import battle_action_use_item
+        from modules.battle_state import get_battle_state
+        from modules.items import get_item_by_name
+
+        yield from battle_action_use_item(get_battle_state(), get_item_by_name(name), None)
+
+    return ExecutionPlan(throw, frozenset({"BATTLE", "BAG_MENU"}), frozenset({"battle", "bag_menu"}))
+
+
 ACTION_EXECUTORS.update({"setup": _setup_plan, "dialogue": _dialogue_plan, "goal": _goal_plan,
-                         "heal": _heal_plan, "battle-run": _battle_run_plan})
+                         "heal": _heal_plan, "battle-run": _battle_run_plan,
+                         "interact": _interact_plan, "battle-switch": _battle_switch_plan,
+                         "battle-item": _battle_item_plan, "catch": _catch_plan})

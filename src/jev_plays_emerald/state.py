@@ -60,6 +60,10 @@ class OpponentBattler:
 class InventoryItem:
     name: str
     quantity: int
+    # PokéBot's ItemBattleUse value ("healing", "pp_recovery", "stat_increase",
+    # "catch", "escape", "not_usable"). Carried as a fact so the enumerator can
+    # offer battle-item and catch options without reaching back into the API.
+    battle_use: str = "not_usable"
 
 
 @dataclass(frozen=True)
@@ -193,7 +197,7 @@ class ObservationReader:
         )
         bag = get_item_bag()
         inventory = tuple(
-            InventoryItem(slot.item.name, slot.quantity)
+            InventoryItem(slot.item.name, slot.quantity, slot.item.battle_use.value)
             for pocket in (bag.items, bag.key_items, bag.poke_balls, bag.tms_hms, bag.berries)
             for slot in pocket
         )
