@@ -146,6 +146,22 @@ class ObservationReader:
         from modules.pokemon_party import get_party
 
         state = get_game_state()
+        if state is None:
+            # The real launcher can enter the mode before Emerald's first frame.
+            # Save blocks and task memory are not safe to decode at that point.
+            return Observation(
+                context_id="boot:unknown",
+                game_state="UNKNOWN",
+                position=None,
+                controllable=False,
+                menu_phase="none",
+                battle_phase="none",
+                party=(),
+                inventory=(),
+                opening_flags=OpeningFlags(False, False, False),
+                active_battler=None,
+                recent_outcomes=tuple(recent_outcomes),
+            )
         game_state = state.name
         position = None
         if state in {GameState.OVERWORLD, GameState.CHANGE_MAP, GameState.BATTLE_STARTING, GameState.BATTLE}:

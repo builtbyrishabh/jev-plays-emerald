@@ -20,6 +20,8 @@ The three accepted runs total 56 model decisions and 117 deterministic decisions
 
 ## Failures and recovery
 
+The final real-launcher check also exposed an uninitialized game state before the first frame. The reader now returns a neutral observation until Emerald initializes, without decoding uninitialized RAM; a focused regression guards this boot boundary.
+
 Two early fresh development attempts paused on implementation bugs: doorway animations were mistaken for blocked movement, and Birch's mandatory repeated Yes/No dialogue was not accepted. Both were corrected before `development3`. The logs retain these failures; the successful runs do not include reloads or manual rescue.
 
 The third timing variation naturally lost its first rival battle. The `Lost` callback left completion false and the rival flag unset; normal whiteout recovery returned the player home. The same run continued without reloads or manual help, chose Oldale healing, and won the rival rematch with Treecko level 7 at 10/24 HP. All three continuous runs ultimately completed; the third did not win on its first rival attempt. macOS sleep scheduling made its nominal 0.3 ms frame delay substantially longer, so its wall time is not directly comparable to the unthrottled run.
@@ -41,6 +43,6 @@ This is a guided opening slice ending at the first rival victory. It does not im
 
 ## Final verification
 
-The final local command `DYLD_LIBRARY_PATH=/opt/homebrew/lib .venv/bin/python -m pytest tests -q` passed **86 tests and 7 ROM subtests** in 8.49 seconds. Two aiohttp deprecation warnings came from a test helper using a bare function. The final bootstrap also passed its pinned native import and plugin registration probes.
+The final local command `DYLD_LIBRARY_PATH=/opt/homebrew/lib .venv/bin/python -m pytest tests -q` passed **87 tests and 7 ROM subtests** in 8.51 seconds. Two aiohttp deprecation warnings came from a test helper using a bare function. The final bootstrap also passed its pinned native import and plugin registration probes.
 
 The real local server served `/jev/index.html`, streamed actual game frames, and accepted queued pause/resume controls with observed state changes. Wide (1440×1000) and narrow (560×1100) screenshots were checked against a clearly labeled completed checkpoint. Pending/probability and error presentation also have labeled fixture checks; those fixture screenshots are not gameplay evidence.

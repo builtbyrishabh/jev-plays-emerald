@@ -242,7 +242,7 @@ Only create each file when its task needs it. The plugin forwards to our package
 
 ## Final handoff — 20 September 2026
 
-Tasks 1–5 are implemented. Three continuous New Game-to-rival runs succeeded, including a real rival loss followed by automatic recovery, healing, and a rematch win. The final local suite passed 86 tests and 7 ROM subtests. See [results](../../results.md), [setup](../../setup.md), and [viewer](../../viewer.md) for evidence and commands.
+Tasks 1–5 are implemented. Three continuous New Game-to-rival runs succeeded, including a real rival loss followed by automatic recovery, healing, and a rematch win. The final local suite passed 87 tests and 7 ROM subtests. See [results](../../results.md), [setup](../../setup.md), and [viewer](../../viewer.md) for evidence and commands.
 
 Task 6's baseline comparison is deliberately narrower than the original proposal: one matched pre-bag starter/rescue checkpoint, with highest listed move base power rather than a general expected-damage calculator. No claim of model superiority is made. The original checklist above remains the design record; the results report is the authoritative account of what was actually verified.
 

@@ -153,3 +153,35 @@ def test_plugin_publishes_initial_custom_state() -> None:
         assert custom_state == {"jev_emerald": {"mode": "Jev Emerald", "status": "idle"}}
     finally:
         sys.path.remove(str(POKEBOT_ROOT))
+
+
+def test_uninitialized_game_state_returns_neutral_observation_without_reading_ram(monkeypatch):
+    sys.path.insert(0, str(POKEBOT_ROOT))
+    try:
+        from modules import memory, items, player, pokemon_party, tasks
+        from jev_plays_emerald.opening import legal_actions
+        from jev_plays_emerald.state import ObservationReader
+
+        def invalid_boot_read(*_args, **_kwargs):
+            raise AssertionError('game RAM must not be decoded before initialization')
+
+        monkeypatch.setattr(memory, 'get_game_state', lambda: None)
+        for module, names in (
+            (memory, ('get_event_flag', 'get_event_var', 'read_symbol')),
+            (items, ('get_item_bag',)),
+            (player, ('get_player', 'get_player_avatar', 'player_avatar_is_controllable')),
+            (pokemon_party, ('get_party',)),
+            (tasks, ('get_tasks', 'get_global_script_context')),
+        ):
+            for name in names:
+                monkeypatch.setattr(module, name, invalid_boot_read)
+
+        observation = ObservationReader().read()
+
+        assert observation.game_state == 'UNKNOWN'
+        assert observation.position is None
+        assert not observation.controllable
+        assert observation.party == observation.inventory == observation.tasks == ()
+        assert legal_actions(observation) == ()
+    finally:
+        sys.path.remove(str(POKEBOT_ROOT))
