@@ -23,6 +23,7 @@ from jev_plays_emerald.state import (
     MoveState,
     Observation,
     ObservationReader,
+    OpponentBattler,
     OpeningFlags,
     PartyMember,
     observation_context_id,
@@ -206,6 +207,28 @@ def test_observation_context_ignores_movement_frames_but_changes_at_a_menu() -> 
     assert battle_menu != first
 
 
+def test_observation_context_changes_with_observed_opponent_hp() -> None:
+    flags = OpeningFlags(True, False, False)
+    party = (PartyMember("Treecko", 5, 20, 20, "Healthy", ()),)
+    opponent = OpponentBattler("Zigzagoon", 2, 13, 13, "Healthy")
+
+    full_hp = observation_context_id(
+        "BATTLE", (0, 16), "battle", "action", party, (), flags, opponent=opponent
+    )
+    damaged = observation_context_id(
+        "BATTLE",
+        (0, 16),
+        "battle",
+        "action",
+        party,
+        (),
+        flags,
+        opponent=OpponentBattler("Zigzagoon", 2, 7, 13, "Healthy"),
+    )
+
+    assert damaged != full_hp
+
+
 def test_observation_is_deeply_immutable() -> None:
     observation = Observation(
         context_id="context",
@@ -300,8 +323,21 @@ def test_battle_actions_use_the_actual_active_battler_after_a_switch(monkeypatch
         from modules import battle_state, items, memory, player, pokemon_party
         from modules.memory import GameState
 
-        scratch = SimpleNamespace(move=SimpleNamespace(name="Scratch"), pp=35, total_pp=35)
-        water_gun = SimpleNamespace(move=SimpleNamespace(name="Water Gun"), pp=25, total_pp=25)
+        def learned_move(name: str, move_type: str, power: int, pp: int):
+            return SimpleNamespace(
+                move=SimpleNamespace(
+                    name=name,
+                    type=SimpleNamespace(name=move_type),
+                    base_power=power,
+                    accuracy=1.0,
+                    description=f"{name} description",
+                ),
+                pp=pp,
+                total_pp=pp,
+            )
+
+        scratch = learned_move("Scratch", "Normal", 40, 35)
+        water_gun = learned_move("Water Gun", "Water", 40, 25)
 
         def pokemon(species: str, move: SimpleNamespace) -> SimpleNamespace:
             return SimpleNamespace(
@@ -326,18 +362,43 @@ def test_battle_actions_use_the_actual_active_battler_after_a_switch(monkeypatch
         monkeypatch.setattr(
             battle_state,
             "get_battle_state",
-            lambda: SimpleNamespace(
-                own_side=SimpleNamespace(active_battler=SimpleNamespace(party_index=1, moves=(water_gun,)))
-            ),
+                lambda: SimpleNamespace(
+                    own_side=SimpleNamespace(
+                        active_battler=SimpleNamespace(
+                            party_index=1,
+                            moves=(water_gun,),
+                            can_use_move=lambda _: True,
+                        )
+                    ),
+                    opponent=SimpleNamespace(active_battler=None),
+                ),
         )
         monkeypatch.setattr(state_module, "_read_phases", lambda _: ("battle", "action"))
 
         observation = ObservationReader().read()
 
-        assert observation.active_battler == ActiveBattler(1, (MoveState("Water Gun", 25, 25),))
-        assert [(action.id, action.label) for action in legal_actions(observation)] == [
-            ("battle-move:0", "Use Water Gun")
+        assert observation.active_battler == ActiveBattler(
+            1,
+            (
+                MoveState(
+                    "Water Gun",
+                    25,
+                    25,
+                    "Water",
+                    40,
+                    1.0,
+                    "Water Gun description",
+                ),
+            ),
+        )
+        [(action_id, label)] = [
+            (action.id, action.label) for action in legal_actions(observation)
         ]
+        assert action_id == "battle-move:0"
+        assert label == (
+            "Use Water Gun (Water, 25/25 PP, 100% accuracy, 40 power). "
+            "Water Gun description"
+        )
     finally:
         sys.path.remove(str(pokebot_root))
 

@@ -236,24 +236,31 @@ def _starter_plan(action: Action) -> ExecutionPlan:
 
     def choose_starter() -> Generator[None, None, None]:
         from modules.context import context
-        from modules.modes.util import ensure_facing_direction, wait_until_task_is_active
-        from modules.player import get_player_avatar
+        from modules.pokemon_party import get_party
 
-        facing = "Left" if get_player_avatar().local_coordinates == (8, 14) else "Up"
-        yield from ensure_facing_direction(facing)
-        yield from wait_until_task_is_active("Task_HandleStarterChooseInput", "A")
+        # The action is exposed only after Emerald has opened its starter
+        # choice screen. Give that task one frame before moving its cursor.
+        yield
         if starter == "treecko":
             context.emulator.press_button("Left")
             yield
         elif starter == "mudkip":
             context.emulator.press_button("Right")
             yield
-        context.emulator.press_button("A")
-        yield
+        while not get_party():
+            context.emulator.press_button("A")
+            yield
+        acquired = get_party()[0].species.name.casefold()
+        if acquired != starter:
+            raise RuntimeError(
+                f"selected {starter}, but the acquired starter was {acquired}"
+            )
 
     return ExecutionPlan(
         choose_starter,
-        frozenset({"OVERWORLD", "CHOOSE_STARTER", "BATTLE_STARTING", "BATTLE"}),
+        frozenset(
+            {"OVERWORLD", "CHOOSE_STARTER", "UNKNOWN", "BATTLE_STARTING", "BATTLE"}
+        ),
         allowed_menu_phases=frozenset({"none", "starter", "battle"}),
     )
 

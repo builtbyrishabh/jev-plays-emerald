@@ -24,6 +24,11 @@ class MoveState:
     name: str
     pp: int
     max_pp: int
+    type: str = "Unknown"
+    power: int = 0
+    accuracy: float = 0.0
+    description: str = ""
+    usable: bool = True
 
 
 @dataclass(frozen=True)
@@ -40,6 +45,15 @@ class PartyMember:
 class ActiveBattler:
     party_index: int
     moves: tuple[MoveState, ...]
+
+
+@dataclass(frozen=True)
+class OpponentBattler:
+    species: str
+    level: int
+    hp: int
+    max_hp: int
+    status: str
 
 
 @dataclass(frozen=True)
@@ -75,6 +89,7 @@ class Observation:
     opening_flags: OpeningFlags
     active_battler: ActiveBattler | None
     recent_outcomes: tuple[RecentOutcome, ...]
+    opponent: OpponentBattler | None = None
 
 
 def observation_context_id(
@@ -86,6 +101,7 @@ def observation_context_id(
     inventory: tuple[InventoryItem, ...],
     opening_flags: OpeningFlags,
     active_battler: ActiveBattler | None = None,
+    opponent: OpponentBattler | None = None,
 ) -> str:
     """Identify a decision situation without changing for movement animation frames."""
 
@@ -98,6 +114,7 @@ def observation_context_id(
         "inventory": inventory,
         "opening_flags": opening_flags,
         "active_battler": active_battler,
+        "opponent": opponent,
     }
     encoded = json.dumps(payload, default=lambda value: value.__dict__, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode()).hexdigest()[:16]
@@ -141,7 +158,7 @@ class ObservationReader:
                 pokemon.total_hp,
                 pokemon.status_condition.name,
                 tuple(
-                    MoveState(move.move.name, move.pp, move.total_pp)
+                    _move_state(move)
                     for move in pokemon.moves
                     if move is not None
                 ),
@@ -160,18 +177,29 @@ class ObservationReader:
             defeated_rival_route103=get_event_flag("DEFEATED_RIVAL_ROUTE103"),
         )
         active_battler = None
+        opponent = None
         if state is GameState.BATTLE:
             from modules.battle_state import get_battle_state
 
-            battler = get_battle_state().own_side.active_battler
+            battle_state = get_battle_state()
+            battler = battle_state.own_side.active_battler
             if battler is not None:
                 active_battler = ActiveBattler(
                     battler.party_index,
                     tuple(
-                        MoveState(move.move.name, move.pp, move.total_pp)
+                        _move_state(move, usable=battler.can_use_move(move.move))
                         for move in battler.moves
                         if move is not None
                     ),
+                )
+            opponent_battler = battle_state.opponent.active_battler
+            if opponent_battler is not None:
+                opponent = OpponentBattler(
+                    opponent_battler.species.name,
+                    opponent_battler.level,
+                    opponent_battler.current_hp,
+                    opponent_battler.total_hp,
+                    opponent_battler.status_permanent.name,
                 )
         context_id = observation_context_id(
             game_state,
@@ -182,6 +210,7 @@ class ObservationReader:
             inventory,
             opening_flags,
             active_battler,
+            opponent,
         )
         return Observation(
             context_id,
@@ -195,7 +224,22 @@ class ObservationReader:
             opening_flags,
             active_battler,
             tuple(recent_outcomes),
+            opponent,
         )
+
+
+def _move_state(move: object, *, usable: bool = True) -> MoveState:
+    move_data = move.move
+    return MoveState(
+        move_data.name,
+        move.pp,
+        move.total_pp,
+        move_data.type.name,
+        move_data.base_power,
+        move_data.accuracy,
+        move_data.description,
+        usable,
+    )
 
 
 def _read_phases(game_state: object) -> tuple[str, str]:

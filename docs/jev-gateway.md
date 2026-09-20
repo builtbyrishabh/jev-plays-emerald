@@ -32,6 +32,19 @@ retry and pause policy so one failure cannot be retried independently at two
 layers. Singleton actions should bypass this adapter and be recorded as
 deterministic.
 
+The mode writes sanitized `request`, `response`, `decision`, `outcome`, and
+`battle-ended` JSONL events. Request events contain the observed game state,
+Choice criteria, instructions, context ID, and attempt number. Response events
+record both accepted and stale successful responses, including the returned
+distribution, confidence, latency, token usage, and a catalog-rate estimate.
+They never contain the Gateway URL, headers, bearer value, or API key.
+
+The cost estimate uses the Vercel Gateway model catalog rate observed on
+2026-09-20: USD 0.000000042 per input token and USD 0 per output token. This is
+a catalog-rate estimate, not a statement about the amount billed. The source
+and checked date are stored with every estimate:
+<https://ai-gateway.vercel.sh/v1/models>.
+
 The response is accepted only when the selected ID is legal and probabilities
 cover every legal ID, are finite and nonnegative, and total `1 ± 0.01`.
 Returned values are preserved rather than normalized. TypeSafe confidence, if

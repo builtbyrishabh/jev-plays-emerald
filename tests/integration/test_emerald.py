@@ -19,7 +19,9 @@ from modules.context import context
 from modules.map_data import MapRSE
 from modules.memory import get_game_state
 from modules.modes import BattleAction
+from modules.modes.util import ensure_facing_direction, wait_until_task_is_active
 from modules.player import get_player_location
+from modules.pokemon_party import get_party
 
 from jev_plays_emerald.actions import Action, ActionExecutor, FrameState, Outcome
 
@@ -27,7 +29,14 @@ from jev_plays_emerald.actions import Action, ActionExecutor, FrameState, Outcom
 class RealFrameBoundary:
     def read_frame_state(self) -> FrameState:
         state = get_game_state().name
-        return FrameState(state, "battle" if state == "BATTLE" else "none")
+        menu = (
+            "battle"
+            if state == "BATTLE"
+            else "starter"
+            if state == "CHOOSE_STARTER"
+            else "none"
+        )
+        return FrameState(state, menu)
 
     def read_context_id(self) -> str:
         return "rom-checkpoint"
@@ -47,6 +56,39 @@ def execute(action: Action, frame_limit: int = 1_500):
 
 
 class TestEmeraldActionIntegration(BotTestCase):
+    def choose_starter(self, starter: str):
+        self.bot_mode.set_on_battle_started(lambda _: BattleAction.CustomAction)
+        facing = "Left" if get_player_location()[1] == (8, 14) else "Up"
+        yield from ensure_facing_direction(facing)
+        yield from wait_until_task_is_active("Task_HandleStarterChooseInput", "A")
+        self.assertEqual("CHOOSE_STARTER", get_game_state().name)
+
+        action = Action(
+            f"starter:{starter.casefold()}",
+            f"Choose {starter}",
+            "rom-checkpoint",
+        )
+        outcome, _ = yield from execute(action)
+
+        self.assertEqual(Outcome.SUCCESS, outcome)
+        self.assertTrue(get_party())
+        self.assertEqual(starter, get_party()[0].species.name)
+
+    @with_save_state("emerald/in_front_of_starter_pokemon_bag.ss1")
+    @with_frame_timeout(1_500)
+    def test_treecko_executor_acquires_treecko(self):
+        yield from self.choose_starter("Treecko")
+
+    @with_save_state("emerald/in_front_of_starter_pokemon_bag.ss1")
+    @with_frame_timeout(1_500)
+    def test_torchic_executor_acquires_torchic(self):
+        yield from self.choose_starter("Torchic")
+
+    @with_save_state("emerald/in_front_of_starter_pokemon_bag.ss1")
+    @with_frame_timeout(1_500)
+    def test_mudkip_executor_acquires_mudkip(self):
+        yield from self.choose_starter("Mudkip")
+
     @with_save_state("emerald/new_game_inside_player_house.ss1")
     @with_frame_timeout(1_000)
     def test_littleroot_door_returns_the_destination_map_and_coordinates(self):

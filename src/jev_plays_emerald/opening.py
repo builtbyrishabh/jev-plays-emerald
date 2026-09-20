@@ -17,9 +17,22 @@ def legal_actions(observation: Observation) -> tuple[Action, ...]:
         if observation.active_battler is None:
             return ()
         return tuple(
-            Action(f"battle-move:{index}", f"Use {move.name}", observation.context_id)
+            Action(
+                f"battle-move:{index}",
+                _move_label(move),
+                observation.context_id,
+            )
             for index, move in enumerate(observation.active_battler.moves)
-            if move.pp > 0
+            if move.pp > 0 and move.usable
         )
 
     return ()
+
+
+def _move_label(move) -> str:
+    accuracy = f"{move.accuracy * 100:g}%" if move.accuracy <= 1 else f"{move.accuracy:g}%"
+    mechanics = f"{move.type}, {move.pp}/{move.max_pp} PP, {accuracy} accuracy"
+    if move.power > 0:
+        mechanics += f", {move.power} power"
+    description = f" {move.description}" if move.description else ""
+    return f"Use {move.name} ({mechanics}).{description}"

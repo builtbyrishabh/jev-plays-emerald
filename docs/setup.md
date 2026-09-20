@@ -34,8 +34,14 @@ Validate the ROM and prepare a new local profile without starting the emulator:
 Start PokéBot headlessly in the `Jev Emerald` mode:
 
 ```bash
-.venv/bin/python -m jev_plays_emerald --rom roms/pokemon-emerald.gba
+uv run --env-file .env python -m jev_plays_emerald --rom roms/pokemon-emerald.gba
 ```
+
+The `.env` file must define `AI_GATEWAY_API_KEY`. `Jev Emerald` makes model
+requests only when two or more semantic actions are legal. It keeps emulator
+input neutral while one request is pending, retries only timeouts, HTTP 429,
+and HTTP 5xx responses twice, then pauses visibly. Requests and responses are
+written to `runs/decisions.jsonl` without HTTP headers or credentials.
 
 Then open <http://127.0.0.1:8888/>, click **Start Video**, and use the upstream viewer. The underlying endpoints are:
 
@@ -46,7 +52,7 @@ Chrome may block the multipart video endpoint when it is opened as a top-level p
 
 The launcher creates the `jev-emerald` profile only when it does not exist. On later runs it validates its metadata and HTTP configuration and refuses to overwrite differences or any save data. Pass `--profile NAME` to create a separate profile, including an explicitly named checkpoint profile.
 
-`Jev Emerald` is deliberately neutral in Task 1. It clears held buttons when it takes control and yields each frame without pressing a button. Its battle hook returns upstream `BattleAction.CustomAction`. Pinned PokéBot otherwise replaces that result with its default strategy for every trainer battle, so the bootstrap applies a one-condition patch that preserves an explicit custom action. A focused test exercises the real `BattleListener` trainer branch and confirms that it does not enqueue the default fight controller.
+`Jev Emerald` clears held buttons while awaiting a decision. Its battle hook returns upstream `BattleAction.CustomAction`. Pinned PokéBot otherwise replaces that result with its default strategy for every trainer battle, so the bootstrap applies a one-condition patch that preserves an explicit custom action. A focused test exercises the real `BattleListener` trainer branch and confirms that it does not enqueue the default fight controller.
 
 ## Tests and measured host evidence
 
@@ -54,6 +60,15 @@ Run the focused test after bootstrapping:
 
 ```bash
 DYLD_LIBRARY_PATH="$(brew --prefix mgba)/lib" .venv/bin/python -m pytest tests/test_observation.py -q
+```
+
+Run the tracked, ROM-backed starter executor checks after bootstrapping:
+
+```bash
+DYLD_LIBRARY_PATH="$(brew --prefix mgba)/lib" .venv/bin/python -m pytest \
+  tests/integration/test_emerald.py::TestEmeraldActionIntegration::test_treecko_executor_acquires_treecko \
+  tests/integration/test_emerald.py::TestEmeraldActionIntegration::test_torchic_executor_acquires_torchic \
+  tests/integration/test_emerald.py::TestEmeraldActionIntegration::test_mudkip_executor_acquires_mudkip -q
 ```
 
 Measured on 20 September 2026:
@@ -71,3 +86,7 @@ Measured on 20 September 2026:
 - a real wild encounter remained neutral in `Jev Emerald` with no held input or HP change
 
 See [Task 1 progress](task-1-progress.md) for checkpoint provenance, hashes, and measured state. These checkpoint checks establish the emulator integration; they are not a continuous New Game acceptance run.
+
+See [Task 3 progress](task-3-progress.md) for the bounded real Jev starter and
+Birch rescue evidence. Task 3 starts from the labeled upstream pre-bag fixture;
+it is not a claim that the current mode autonomously plays from New Game.
