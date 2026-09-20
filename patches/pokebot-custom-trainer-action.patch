@@ -1,0 +1,17 @@
+diff --git a/modules/modes/_listeners.py b/modules/modes/_listeners.py
+index b090951..71eb2b3 100644
+--- a/modules/modes/_listeners.py
++++ b/modules/modes/_listeners.py
+@@ -107,7 +107,11 @@ class BattleListener(BotListener):
+ 
+             action = bot_mode.on_battle_started(self._active_wild_encounter)
+ 
+-            if encounter_type is EncounterType.Trainer and not isinstance(action, BattleStrategy):
++            if (
++                encounter_type is EncounterType.Trainer
++                and action is not BattleAction.CustomAction
++                and not isinstance(action, BattleStrategy)
++            ):
+                 action = BattleAction.Fight
+             elif encounter_type is EncounterType.Tutorial:
+                 action = BattleAction.CustomAction

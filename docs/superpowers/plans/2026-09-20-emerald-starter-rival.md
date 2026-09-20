@@ -240,8 +240,10 @@ Only create each file when its task needs it. The plugin forwards to our package
 
 **Exit criterion:** The user can follow documented commands, see Jev acquire a starter, and watch a verified first rival win. No extension into gyms or the full region before this passes.
 
-## Sequence and current handoff
+## Final handoff — 20 September 2026
 
-Implement Tasks 1–6 in order, with the plain live feed available in Task 1 and the final decision panel in Task 5. Use the user-requested cheaper research model for bounded upstream investigation and Sol for implementation when delegation is useful; the parent owns integration decisions.
+Tasks 1–5 are implemented. Three continuous New Game-to-rival runs succeeded, including a real rival loss followed by automatic recovery, healing, and a rematch win. The final local suite passed 87 tests and 7 ROM subtests. See [results](../../results.md), [setup](../../setup.md), and [viewer](../../viewer.md) for evidence and commands.
 
-This turn only renames, publishes, and plans the project. The next implementation action is Task 1. The inputs still needed for real execution are a matching Emerald ROM and a TypeSafe API key; neither has been verified for this repository.
+Task 6's baseline comparison is deliberately narrower than the original proposal: one matched pre-bag starter/rescue checkpoint, with highest listed move base power rather than a general expected-damage calculator. No claim of model superiority is made. The original checklist above remains the design record; the results report is the authoritative account of what was actually verified.
+
+Implementation is on `feat/emerald-boot` in the isolated local worktree. ROMs, keys, saves, and recordings remain ignored.
