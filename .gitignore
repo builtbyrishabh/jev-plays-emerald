@@ -1,0 +1,26 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# User-provided game assets and generated emulator state
+roms/
+saves/
+recordings/
+screenshots/
+*.gba
+*.sav
+*.ss0
+
+# Frontend build output
+node_modules/
+dist/
+
+# Local agent telemetry
+runs/
+*.jsonl
+
+.DS_Store
+
