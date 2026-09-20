@@ -183,7 +183,7 @@ def _walk_plan(action: Action) -> ExecutionPlan:
     def navigate() -> Generator[None, None, None]:
         from modules.memory import GameState, get_game_state
         from modules.modes.util.walking import TimedOutTryingToReachWaypointError, navigate_to
-        from modules.player import get_player_location
+        from modules.player import get_player_location, player_avatar_is_controllable
 
         upstream = navigate_to(destination_map, destination)
         last_location = get_player_location()
@@ -191,7 +191,7 @@ def _walk_plan(action: Action) -> ExecutionPlan:
         try:
             while True:
                 next(upstream)
-                if get_game_state() is GameState.OVERWORLD:
+                if get_game_state() is GameState.OVERWORLD and player_avatar_is_controllable():
                     location = get_player_location()
                     if location == last_location:
                         stalled_frames += 1
@@ -293,3 +293,146 @@ ACTION_EXECUTORS: dict[str, ActionPlanFactory] = {
     "starter": _starter_plan,
     "battle-move": _battle_move_plan,
 }
+
+
+def _setup_plan(action: Action) -> ExecutionPlan:
+    def setup():
+        from modules.context import context
+        from modules.memory import GameState, get_game_state
+        from modules.tasks import task_is_active
+
+        kind = action.id.partition(":")[2]
+        if kind == "new-game":
+            while get_game_state() in {GameState.TITLE_SCREEN, GameState.MAIN_MENU, GameState.UNKNOWN}:
+                context.emulator.press_button("A")
+                yield
+        elif kind == "name":
+            while not task_is_active("Task_HandleInput"):
+                yield
+            # Fixed keyboard positions on the supported English Emerald ROM.
+            # This is setup configuration, never a model-selected game action.
+            for button in ("Down", "Right", "Right", "Right", "A", "Up", "Right", "A",
+                           "Down", "Down", "Down", "Left", "Left", "A", "Start", "A"):
+                context.emulator.press_button(button)
+                for _ in range(17):
+                    yield
+            while get_game_state() is GameState.NAMING_SCREEN:
+                context.emulator.press_button("A")
+                yield
+        elif kind == "clock":
+            context.emulator.press_button("A")
+            yield
+            while not task_is_active("Task_SetClock_HandleConfirmInput"):
+                yield
+            context.emulator.press_button("Up")  # Confirmation defaults to No.
+            yield
+            yield
+            context.emulator.press_button("A")
+            yield
+        else:
+            raise ValueError(f"unknown opening setup: {kind}")
+
+    return ExecutionPlan(setup, frozenset({"TITLE_SCREEN", "MAIN_MENU", "NAMING_SCREEN", "UNKNOWN", "OVERWORLD"}),
+                         frozenset({"none", "script"}))
+
+
+def _dialogue_plan(action: Action) -> ExecutionPlan:
+    def advance():
+        from modules.context import context
+        from modules.tasks import get_global_script_context
+
+        from jev_plays_emerald.opening import dialogue_button
+
+        while get_global_script_context().is_active:
+            context.emulator.press_button(dialogue_button(tuple(get_global_script_context().stack)))
+            yield
+
+    return ExecutionPlan(advance, frozenset({"OVERWORLD", "CHANGE_MAP"}), frozenset({"none", "script"}))
+
+
+def _goal_plan(action: Action) -> ExecutionPlan:
+    def goal():
+        from modules.context import context
+        from modules.map_data import MapRSE
+        from modules.map import get_map_objects
+        from modules.player import get_player, get_player_location
+        from modules.modes.util import ensure_facing_direction
+        from modules.modes.util.higher_level_actions import talk_to_npc
+
+        here, _ = get_player_location()
+        male = get_player().gender == "male"
+        kind = action.id.partition(":")[2]
+        targets = {
+            "leave-truck": (MapRSE.INSIDE_OF_TRUCK, (4, 2)),
+            "upstairs": (here, (8, 2) if male else (2, 2)),
+            "rival-upstairs": (here, (2, 2) if male else (8, 2)),
+            "clock": (here, (5, 2)),
+            "rival-house": (MapRSE.LITTLEROOT_TOWN, (14, 8) if male else (5, 8)),
+            "meet-rival": (here, (5, 5)),
+            "leave-lab": (here, (6, 12)),
+            "birch-bag": (MapRSE.ROUTE101, (7, 15)),
+            "oldale": (MapRSE.OLDALE_TOWN, (10, 10)),
+            "rival": (MapRSE.ROUTE103, (10, 4)),
+        }
+        if kind == "downstairs":
+            destination = (here, (7, 1) if here == MapRSE.LITTLEROOT_TOWN_BRENDANS_HOUSE_2F else (1, 1))
+        elif kind == "leave-house":
+            destination = (here, (8, 8) if here == MapRSE.LITTLEROOT_TOWN_BRENDANS_HOUSE_1F else (2, 8))
+        else:
+            destination = targets[kind]
+        map_id, coordinates = destination
+        group, number = map_id.value if isinstance(map_id, MapRSE) else map_id
+        walk = Action(f"walk:{group}:{number}:{coordinates[0]}:{coordinates[1]}", action.label, action.context_id)
+        yield from _walk_plan(walk).start()
+        if kind in {"clock", "meet-rival", "birch-bag", "rival"}:
+            if kind == "rival":
+                # Resolve the live object at the source-backed rival landmark.
+                npc = next((obj for obj in get_map_objects() if obj.current_coords == (10, 3)), None)
+                if npc is None:
+                    raise RuntimeError("Route 103 rival object is not at the expected landmark")
+                yield from talk_to_npc(npc.local_id)
+            else:
+                yield from ensure_facing_direction("Up")
+                context.emulator.press_button("A")
+                yield
+
+    return ExecutionPlan(goal, frozenset({"OVERWORLD", "CHANGE_MAP"}), retry_on=(NavigationBlocked,))
+
+
+def _heal_plan(action: Action) -> ExecutionPlan:
+    if action.id != "heal:oldale":
+        raise ValueError("only Oldale healing is in opening scope")
+
+    def heal():
+        from modules.map_data import PokemonCenter
+        from modules.modes.util.higher_level_actions import heal_in_pokemon_center
+        from modules.pokemon_party import get_party
+
+        yield from heal_in_pokemon_center(PokemonCenter.OldaleTown)
+        party = get_party()
+        if not party or any(p.current_hp != p.total_hp or p.status_condition.name != "Healthy"
+                            or any(move.pp != move.total_pp for move in p.moves if move is not None)
+                            for p in party):
+            raise RuntimeError("Pokémon Center finished without restoring party HP, status and PP")
+
+    return ExecutionPlan(heal, frozenset({"OVERWORLD", "CHANGE_MAP"}), frozenset({"none", "script"}))
+
+
+def _battle_run_plan(action: Action) -> ExecutionPlan:
+    def run():
+        from modules.context import context
+        from modules.battle_state import get_battle_state
+        from modules.battle_strategies._util import BattleStrategyUtil
+        from modules.battle_action_selection import scroll_to_battle_action
+
+        if BattleStrategyUtil(get_battle_state()).get_escape_chance() <= 0:
+            raise RuntimeError("running is not legal in this battle")
+        yield from scroll_to_battle_action(3)
+        context.emulator.press_button("A")
+        yield
+
+    return ExecutionPlan(run, frozenset({"BATTLE"}), frozenset({"battle"}))
+
+
+ACTION_EXECUTORS.update({"setup": _setup_plan, "dialogue": _dialogue_plan, "goal": _goal_plan,
+                         "heal": _heal_plan, "battle-run": _battle_run_plan})

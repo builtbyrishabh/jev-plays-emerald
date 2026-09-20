@@ -128,3 +128,28 @@ class TestEmeraldActionIntegration(BotTestCase):
         self.assertEqual((MapRSE.ROUTE101, (16, 11)), get_player_location())
         self.assertEqual("BATTLE_STARTING", get_game_state().name)
         self.assertEqual(0, context.emulator.reset_held_buttons())
+
+
+INJURED_TASK4_STATE = PROJECT_ROOT / '.cache/task4-development3/final.ss1'
+
+
+class TestOpeningRecoveryIntegration(BotTestCase):
+    @pytest.mark.skipif(not INJURED_TASK4_STATE.is_file(), reason='requires labeled naturally injured Task 4 run checkpoint')
+    @with_save_state(str(INJURED_TASK4_STATE))
+    @with_frame_timeout(3_600)
+    def test_oldale_center_restores_naturally_injured_party(self):
+        from modules.modes.util import wait_for_player_avatar_to_be_controllable
+        yield from wait_for_player_avatar_to_be_controllable()
+        self.assertTrue(any(p.current_hp < p.total_hp for p in get_party()))
+        self.assertTrue(any(move.pp < move.total_pp for p in get_party() for move in p.moves if move))
+        self.bot_mode.set_on_battle_started(lambda _: BattleAction.CustomAction)
+        action=Action('heal:oldale','Restore party at Oldale','rom-checkpoint')
+        outcome, _ = yield from execute(action, frame_limit=3_600)
+        self.assertEqual(Outcome.SUCCESS,outcome)
+        self.assertEqual(MapRSE.OLDALE_TOWN,get_player_location()[0])
+        for pokemon in get_party():
+            self.assertEqual(pokemon.total_hp,pokemon.current_hp)
+            self.assertEqual('Healthy',pokemon.status_condition.name)
+            for move in pokemon.moves:
+                if move is not None:
+                    self.assertEqual(move.total_pp,move.pp)

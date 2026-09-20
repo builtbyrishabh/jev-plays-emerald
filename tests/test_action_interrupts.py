@@ -349,6 +349,13 @@ def test_battle_actions_use_the_actual_active_battler_after_a_switch(monkeypatch
                 moves=(move, None, None, None),
             )
 
+        from modules import tasks
+        from modules.battle_strategies._util import BattleStrategyUtil
+        monkeypatch.setattr(memory, "get_event_var", lambda _: 0)
+        monkeypatch.setattr(player, "get_player", lambda: SimpleNamespace(gender="male"))
+        monkeypatch.setattr(tasks, "get_tasks", lambda: ())
+        monkeypatch.setattr(tasks, "get_global_script_context", lambda: SimpleNamespace(is_active=False))
+        monkeypatch.setattr(BattleStrategyUtil, "get_escape_chance", lambda _: 0)
         monkeypatch.setattr(memory, "get_game_state", lambda: GameState.BATTLE)
         monkeypatch.setattr(memory, "get_event_flag", lambda _: False)
         monkeypatch.setattr(player, "get_player_avatar", lambda: (_ for _ in ()).throw(RuntimeError()))
@@ -363,6 +370,7 @@ def test_battle_actions_use_the_actual_active_battler_after_a_switch(monkeypatch
             battle_state,
             "get_battle_state",
                 lambda: SimpleNamespace(
+                    is_trainer_battle=False,
                     own_side=SimpleNamespace(
                         active_battler=SimpleNamespace(
                             party_index=1,

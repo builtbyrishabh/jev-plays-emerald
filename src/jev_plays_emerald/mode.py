@@ -13,7 +13,7 @@ from modules.modes import BattleAction, BotMode
 
 from jev_plays_emerald.actions import Action, ActionExecutor, FrameState, Outcome
 from jev_plays_emerald.jev import JevChoice, JevGateway, JevGatewayError, JevTimeoutError, JsonValue
-from jev_plays_emerald.opening import legal_actions
+from jev_plays_emerald.opening import RivalProgress, legal_actions
 from jev_plays_emerald.state import Observation, ObservationReader, RecentOutcome
 from jev_plays_emerald.telemetry import DecisionTelemetry
 
@@ -51,6 +51,7 @@ class _SingleRequestWorker:
 
 _MODEL_WORKER = _SingleRequestWorker()
 _DECISION_INSTRUCTIONS = (
+    "Your mission is to acquire a starter, rescue Birch, and win the first rival battle on Route 103. "
     "Choose exactly one legal action for the current Pokemon Emerald state. "
     "Treat the probabilities as your preferences over the offered actions."
 )
@@ -81,6 +82,7 @@ class JevEmeraldMode(BotMode):
     ):
         self._observation_reader = ObservationReader() if observation_reader is None else observation_reader
         self._paused = False
+        self._progress = RivalProgress()
         self._latest_observation: Observation | None = None
         self._available_actions: tuple[Action, ...] = ()
         self._pending_action: Action | None = None
@@ -98,6 +100,10 @@ class JevEmeraldMode(BotMode):
     @staticmethod
     def name() -> str:
         return "Jev Emerald"
+
+    @property
+    def completed(self) -> bool:
+        return self._progress.completed
 
     @property
     def observation(self) -> Observation | None:
@@ -158,7 +164,10 @@ class JevEmeraldMode(BotMode):
         try:
             while True:
                 observation = self._observation_reader.read(tuple(self._recent_outcomes))
-                actions = legal_actions(observation)
+                self._progress.observe(observation)
+                if self.completed and not self._paused:
+                    self.set_paused(True)
+                actions = () if self.completed else legal_actions(observation)
                 with self._state_lock:
                     self._latest_observation = observation
                     self._available_actions = actions
@@ -200,6 +209,8 @@ class JevEmeraldMode(BotMode):
                             # selected action remains the authoritative record for that frame.
                             action = self._last_started_action
                         if action is not None:
+                            if action.id.startswith("starter:") and outcome is Outcome.SUCCESS:
+                                self._progress.starter_acquired = bool(observation.party)
                             self._recent_outcomes.append(
                                 RecentOutcome(action.id, outcome, self._executor.last_reason)
                             )
@@ -414,6 +425,7 @@ class JevEmeraldMode(BotMode):
         return BattleAction.CustomAction
 
     def on_battle_ended(self, outcome: "BattleOutcome") -> None:
+        self._progress.battle_ended(outcome.name)
         self._telemetry.battle_ended(outcome.name)
 
 

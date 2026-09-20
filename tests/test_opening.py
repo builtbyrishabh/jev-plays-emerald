@@ -1,0 +1,94 @@
+from dataclasses import replace
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).parents[1] / ".cache/pokebot-gen3"))
+import pytest
+from jev_plays_emerald.opening import RivalProgress, legal_actions, rival_completed
+from jev_plays_emerald.state import Observation, OpeningFlags, MapPosition, PartyMember, MoveState
+
+@pytest.mark.parametrize('starter,win,before,after,expected', [(True,True,False,True,True),(True,False,True,True,False),(True,False,False,True,False),(True,False,False,False,False),(False,True,False,True,False)])
+def test_completion_requires_new_observed_win(starter,win,before,after,expected):
+    assert rival_completed(starter_acquired=starter,saw_rival_win=win,flag_before=before,flag_after=after) is expected
+
+def observation(**changes):
+    base=Observation('test','OVERWORLD',MapPosition((0,18),(10,4),'Up'),True,'none','none',(),(),OpeningFlags(True,False,False),None,())
+    return replace(base,**changes)
+
+def test_wild_win_and_other_route103_trainer_never_complete():
+    for trainer in (None, 100):
+        progress=RivalProgress(starter_acquired=True)
+        progress.observe(observation(game_state='BATTLE',trainer_id=trainer))
+        progress.battle_ended('Won')
+        progress.observe(observation(opening_flags=OpeningFlags(True,False,True)))
+        assert not progress.completed
+
+def test_rival_loss_does_not_complete_but_new_win_and_flag_do():
+    progress=RivalProgress(starter_acquired=True)
+    progress.observe(observation(game_state='BATTLE',trainer_id=535))
+    progress.battle_ended('Lost')
+    assert not progress.completed
+    progress.observe(observation())
+    progress.observe(observation(game_state='BATTLE',trainer_id=535))
+    progress.battle_ended('Won')
+    assert not progress.completed
+    progress.observe(observation(opening_flags=OpeningFlags(True,False,True)))
+    assert progress.completed
+
+def test_loaded_completed_save_cannot_be_a_new_win():
+    progress=RivalProgress(starter_acquired=True)
+    progress.observe(observation(game_state='BATTLE',trainer_id=535,opening_flags=OpeningFlags(True,False,True)))
+    progress.battle_ended('Won')
+    progress.observe(observation(opening_flags=OpeningFlags(True,False,True)))
+    assert not progress.completed
+
+def test_injured_overworld_offers_heal_and_rival_goal():
+    member=PartyMember('Treecko',5,10,20,'Healthy',(MoveState('Pound',30,35),))
+    actions=legal_actions(observation(party=(member,)))
+    assert {a.id for a in actions} == {'heal:oldale','goal:rival'}
+
+
+def test_dialogue_declines_nickname_but_accepts_mandatory_rival_visit():
+    from jev_plays_emerald.opening import dialogue_button
+    assert dialogue_button(('LittlerootTown_ProfessorBirchsLab_EventScript_DeclineSeeingRival', 'Std_MsgboxYesNo')) == 'A'
+    assert dialogue_button(('LittlerootTown_ProfessorBirchsLab_EventScript_GiveStarter',)) == 'B'
+
+
+def test_run_is_offered_only_when_the_observer_confirms_it_is_legal():
+    from jev_plays_emerald.state import ActiveBattler
+    battle=observation(game_state='BATTLE', menu_phase='battle', battle_phase='action',
+                       active_battler=ActiveBattler(0,(MoveState('Pound',35,35),)))
+    assert [a.id for a in legal_actions(battle)] == ['battle-move:0']
+    assert [a.id for a in legal_actions(replace(battle,can_run=True))] == ['battle-move:0','battle-run']
+    assert all('switch' not in a.id for a in legal_actions(battle))
+
+
+def test_fully_healed_party_has_no_redundant_center_choice():
+    member=PartyMember('Treecko',5,20,20,'Healthy',(MoveState('Pound',35,35),))
+    assert [a.id for a in legal_actions(observation(party=(member,)))] == ['goal:rival']
+
+
+def test_door_animation_is_not_counted_as_navigation_stall(monkeypatch):
+    from modules import memory, player
+    from modules.modes.util import walking
+    from jev_plays_emerald.actions import Action, _walk_plan
+
+    def door_animation(*_):
+        yield from (None for _ in range(70))
+
+    monkeypatch.setattr(walking, 'navigate_to', door_animation)
+    monkeypatch.setattr(memory, 'get_game_state', lambda: memory.GameState.OVERWORLD)
+    monkeypatch.setattr(player, 'get_player_location', lambda: ((0,9),(14,8)))
+    monkeypatch.setattr(player, 'player_avatar_is_controllable', lambda: False)
+    assert len(list(_walk_plan(Action('walk:0:9:14:8','Enter neighbor house','door')).start())) == 70
+
+
+def test_post_loss_battle_animation_cannot_rearm_rival_for_later_wild_win():
+    progress=RivalProgress(starter_acquired=True)
+    rival=observation(game_state='BATTLE',trainer_id=532)
+    progress.observe(rival)
+    progress.battle_ended('Lost')
+    progress.observe(rival)  # Emerald can still report BATTLE after its outcome callback.
+    progress.observe(observation())
+    progress.observe(observation(game_state='BATTLE',trainer_id=None))
+    progress.battle_ended('Won')
+    assert not progress.saw_rival_win

@@ -67,6 +67,8 @@ class OpeningFlags:
     rescued_birch: bool
     received_pokedex: bool
     defeated_rival_route103: bool
+    set_wall_clock: bool = False
+    rival_left_for_route103: bool = False
 
 
 @dataclass(frozen=True)
@@ -90,6 +92,13 @@ class Observation:
     active_battler: ActiveBattler | None
     recent_outcomes: tuple[RecentOutcome, ...]
     opponent: OpponentBattler | None = None
+    trainer_id: int | None = None
+    can_run: bool = False
+    tasks: tuple[str, ...] = ()
+    scripts: tuple[str, ...] = ()
+    rival_house_state: int = 0
+    lab_state: int = 0
+    player_gender: str = "male"
 
 
 def observation_context_id(
@@ -131,8 +140,9 @@ class ObservationReader:
             raise RuntimeError("observations must be built on the emulator owner thread")
 
         from modules.items import get_item_bag
-        from modules.memory import GameState, get_event_flag, get_game_state
-        from modules.player import get_player_avatar, player_avatar_is_controllable
+        from modules.memory import GameState, get_event_flag, get_event_var, get_game_state, read_symbol, unpack_uint16
+        from modules.player import get_player, get_player_avatar, player_avatar_is_controllable
+        from modules.tasks import get_tasks, get_global_script_context
         from modules.pokemon_party import get_party
 
         state = get_game_state()
@@ -175,13 +185,22 @@ class ObservationReader:
             rescued_birch=get_event_flag("RESCUED_BIRCH"),
             received_pokedex=get_event_flag("SYS_POKEDEX_GET"),
             defeated_rival_route103=get_event_flag("DEFEATED_RIVAL_ROUTE103"),
+            set_wall_clock=get_event_flag("SET_WALL_CLOCK"),
+            rival_left_for_route103=get_event_flag("RIVAL_LEFT_FOR_ROUTE103"),
         )
         active_battler = None
         opponent = None
+        trainer_id = None
+        can_run = False
         if state is GameState.BATTLE:
             from modules.battle_state import get_battle_state
 
             battle_state = get_battle_state()
+            if battle_state.is_trainer_battle:
+                trainer_id = unpack_uint16(read_symbol("gTrainerBattleOpponent_A", size=2))
+            if battle_phase == "action" and battle_state.own_side.active_battler is not None:
+                from modules.battle_strategies._util import BattleStrategyUtil
+                can_run = BattleStrategyUtil(battle_state).get_escape_chance() > 0
             battler = battle_state.own_side.active_battler
             if battler is not None:
                 active_battler = ActiveBattler(
@@ -225,6 +244,13 @@ class ObservationReader:
             active_battler,
             tuple(recent_outcomes),
             opponent,
+            trainer_id=trainer_id,
+            can_run=can_run,
+            tasks=tuple(task.symbol for task in get_tasks()),
+            scripts=tuple(get_global_script_context().stack) if get_global_script_context().is_active else (),
+            rival_house_state=get_event_var("LITTLEROOT_RIVAL_STATE"),
+            lab_state=get_event_var("BIRCH_LAB_STATE"),
+            player_gender=get_player().gender,
         )
 
 
