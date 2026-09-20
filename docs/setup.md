@@ -1,6 +1,6 @@
-# Task 1 setup: pinned Emerald runtime
+# Local setup: pinned Emerald runtime
 
-Task 1 targets Apple Silicon macOS and Python 3.13. The bootstrap keeps PokéBot, its native binding, ROM links, profiles, and generated state under the ignored `.cache/` directory.
+The verified runtime targets Apple Silicon macOS and Python 3.13. The bootstrap keeps PokéBot, its native binding, ROM links, profiles, and generated state under the ignored `.cache/` directory.
 
 ## Prerequisites
 
@@ -43,12 +43,12 @@ input neutral while one request is pending, retries only timeouts, HTTP 429,
 and HTTP 5xx responses twice, then pauses visibly. Requests and responses are
 written to `runs/decisions.jsonl` without HTTP headers or credentials.
 
-Then open <http://127.0.0.1:8888/>, click **Start Video**, and use the upstream viewer. The underlying endpoints are:
+Then open <http://127.0.0.1:8888/jev/index.html>. The live viewer shows game frames, decisions, HP, progress, and pause/resume controls. The underlying endpoints are:
 
 - Video: <http://127.0.0.1:8888/stream_video?fps=15>
 - Plugin status: <http://127.0.0.1:8888/custom_state>
 
-Chrome may block the multipart video endpoint when it is opened as a top-level page; the root viewer embeds it correctly.
+Chrome may block the multipart video endpoint when it is opened as a top-level page; the application viewer embeds it correctly.
 
 The launcher creates the `jev-emerald` profile only when it does not exist. On later runs it validates its metadata and HTTP configuration and refuses to overwrite differences or any save data. Pass `--profile NAME` to create a separate profile, including an explicitly named checkpoint profile.
 
@@ -89,4 +89,18 @@ See [Task 1 progress](task-1-progress.md) for checkpoint provenance, hashes, and
 
 See [Task 3 progress](task-3-progress.md) for the bounded real Jev starter and
 Birch rescue evidence. Task 3 starts from the labeled upstream pre-bag fixture;
-it is not a claim that the current mode autonomously plays from New Game.
+it is separate from the subsequent continuous New Game evidence in [results](results.md).
+
+## Opening and checkpoints
+
+A fresh profile starts the configured opening: male player named JEV, default 10:00 AM clock, and no starter nickname. Jev chooses the starter. The mode stops after proving the first Route 103 rival victory; post-rival progression is outside this slice.
+
+Use a new `--profile NAME` to start separately without changing an existing save. Upstream profile saves are stored under `.cache/pokebot-gen3/profiles/NAME/`. To use a checkpoint, create a separate profile with `--check`, stop that profile's emulator, and place your own normally generated save state at its `current_state.ss1`. Label checkpoint runs explicitly; a pre-existing rival flag cannot count as a new completion.
+
+The browser's Pause button invalidates pending model decisions and releases game inputs. Resume uses a fresh observation. API and action failures are visible; there is no silent rules-based fallback. See [viewer](viewer.md) and [results](results.md).
+
+Run the complete local suite after bootstrap:
+
+```bash
+DYLD_LIBRARY_PATH="$(brew --prefix mgba)/lib" .venv/bin/python -m pytest tests -q
+```
