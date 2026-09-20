@@ -41,6 +41,7 @@ def test_mode_keeps_control_without_pressing_buttons_in_battle() -> None:
         from modules.modes import BattleAction
 
         from jev_plays_emerald.mode import JevEmeraldMode
+        from jev_plays_emerald.state import Observation, OpeningFlags
 
         class FakeEmulator:
             def __init__(self) -> None:
@@ -49,10 +50,26 @@ def test_mode_keeps_control_without_pressing_buttons_in_battle() -> None:
             def reset_held_buttons(self) -> None:
                 self.held_buttons.clear()
 
+        class FakeObservationReader:
+            def read(self, recent_outcomes=()) -> Observation:
+                return Observation(
+                    context_id="battle",
+                    game_state="BATTLE",
+                    position=None,
+                    controllable=False,
+                    menu_phase="battle",
+                    battle_phase="none",
+                    party=(),
+                    inventory=(),
+                    opening_flags=OpeningFlags(False, False, False),
+                    active_battler=None,
+                    recent_outcomes=tuple(recent_outcomes),
+                )
+
         previous_emulator = context.emulator
         try:
             context.emulator = FakeEmulator()
-            mode = JevEmeraldMode()
+            mode = JevEmeraldMode(observation_reader=FakeObservationReader())
 
             assert next(mode.run()) is None
             assert context.emulator.held_buttons == set()
