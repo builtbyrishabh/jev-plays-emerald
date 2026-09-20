@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 .venv/
 __pycache__/
 *.py[cod]
@@ -13,14 +15,20 @@ screenshots/
 *.gba
 *.sav
 *.ss0
+*.ss[1-9]
+*.srm
+*.state
+profiles/
+.cache/
+vendor/
 
 # Frontend build output
 node_modules/
 dist/
+*.egg-info/
 
 # Local agent telemetry
 runs/
 *.jsonl
 
 .DS_Store
-

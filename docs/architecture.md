@@ -1,90 +1,77 @@
-# Live Pokemon agent architecture
+# Jev Plays Emerald: first playable slice
 
-## Product goal
+## Goal
 
-Build a watchable Pokemon agent in which Jev makes the decisions that change the run. The application supplies reliable perception, world knowledge, navigation, and controller skills. Codex is used while developing those capabilities, not while the published run is playing.
+Run the real Emerald game locally and watch Jev choose its first Pokémon and win the first rival battle. Keep the game prominent, the decision panel small, and dependencies limited to what the existing emulator integration needs.
 
-The first milestone is a multi-map FireRed slice: Pallet Town, Route 1, and Viridian City. The agent must handle dialogue, wild battles, low party health, healing at the Pokemon Center, visiting the Poke Mart, and returning to Professor Oak.
+The required route is New Game/Littleroot setup, Route 101 starter choice and Birch rescue, Birch's lab, Oldale Town, then the rival on Route 103. Birch's rescue battle against Zigzagoon is distinct from the rival battle. The player-name, gender, clock, and nickname defaults are setup configuration; starter selection and battle choices belong to Jev.
 
-## Runtime boundary
+## Runtime
 
-The live runtime has five parts:
+```text
+mGBA / PokéBot Gen3
+  → coherent Emerald observation
+  → legal semantic actions
+  → Jev Choice when multiple actions exist
+  → verified, bounded input routine
+  → next decision point
 
-1. **Emulator adapter** reads FireRed RAM and advances mGBA frames. It exposes stable observations rather than screenshots to the decision layer.
-2. **World model** identifies the current map and coordinates, builds a graph of map transitions and landmarks, and keeps short run memory.
-3. **Candidate generator** derives legal, meaningful goals from current state. It never offers an action the executor cannot perform.
-4. **Jev policy** chooses among those goals or among legal battle actions. Its returned distribution is recorded and displayed as model preference, not win probability.
-5. **Skill executor** turns the selected goal into verified emulator inputs using pathfinding and menu routines.
+Emulator frames + immutable agent status → local HTTP server → browser
+```
 
-The live frontend reads the emulator frame and agent status from the same local process. The game remains the main visual element.
+Use one application process initially. A single owner advances the emulator and performs all emulator reads/writes. The HTTP thread reads published frames/status and submits a pause/resume flag; it never accesses emulator memory. A background model request allows frames and status to remain responsive while inputs are held neutral. Discard an answer if the action context changed before execution.
 
-## Jev's role
+## What to reuse
 
-Jev owns decisions where more than one option can reasonably advance the run:
+Prefer a pinned PokéBot Gen3 plugin/custom mode over a new emulator framework. Its Emerald-aware RAM, map, navigation, starter, healing, and battle routines are the first reuse targets. Existing automatic battle policies and shiny-reset modes must not silently replace Jev's choices. A short integration probe determines whether the plugin entrypoint can use the built-in HTTP/video support directly or needs a thin local server. See [reuse decisions](reuse.md).
 
-- continue the story, explore, train, shop, or heal;
-- return to a Pokemon Center, consume an item, or accept the risk of continuing;
-- select a move, switch, use an item, catch, or run in battle;
-- choose a reachable landmark, exit, or NPC when several are relevant;
-- recover from an unexpected encounter, failed route, or changed party state.
+Python remains the application language because these dependencies are Python. Use plain HTML/CSS/JavaScript for the initial viewer; introduce no frontend build system unless the existing viewer requires one. Do not build a second service merely to call Jev.
 
-Jev is not called for frames, individual walking inputs, deterministic dialogue advancement, or singleton action lists.
+## Observations and world knowledge
 
-## World knowledge and navigation
+Read the current map ID, tile coordinates, facing, controllability, menus/tasks, party HP/status/moves/PP, items, battle phase, legal targets, and the few opening story flags. Use upstream map/warp/collision readers and object IDs for landmarks in Littleroot, Routes 101/103, Oldale, Birch's lab, and Oldale's Pokémon Center. Do not construct a full-region atlas for this milestone.
 
-The application maintains a version-specific FireRed world index derived from legal metadata sources and the user-provided ROM at runtime. It contains map identifiers, collision data, warp connections, landmark types, and interaction positions. It does not contain ROM data or copyrighted game assets.
+Map knowledge and mechanical facts are supplied to the model explicitly. This is structured-state play with known map data; it is not screenshot-only exploration. Do not send hidden opponent move sets or future RNG. Available battle information should match what the run has observed, with exact HP from RAM labeled as such.
 
-The current RAM state supplies map ID, player coordinates, facing direction, party health and status, inventory, badges, story flags, battle state, and menu state. A map-graph search finds a route between landmarks; tile-level A* finds the path inside each map. Every transition is verified against the new RAM state before execution continues.
+Maintain only an in-memory current objective, interrupted objective, recent actions/results, visited landmarks, and failure counts. A local JSONL log captures completed decisions and outcomes. No database is needed.
 
-For example, when party health is low, the candidate generator can offer:
+## Jev and deterministic skills
 
-- continue toward the current story objective;
-- use a carried healing item;
-- heal at the nearest reachable Pokemon Center.
+Jev selects among Treecko/Torchic/Mudkip, useful reachable goals, healing versus continuing, and legal battle actions. Model distributions are preferences over offered labels, not win probabilities. The first battle can have few choices; the UI must not imply that a forced input is a model decision.
 
-The state sent to Jev includes health, route distance, known risks, recent failures, and those legal goals. If Jev chooses healing, the executor routes to the selected Center, enters it, interacts with the nurse, and verifies that the party was restored before returning control to Jev.
+Code establishes legal actions from game facts and executes the selected one. Singleton actions and ordinary animation/text advancement bypass Jev and are labeled deterministic. Dialogue confirmation must distinguish ordinary text from a meaningful choice menu. Avoid embedding a complete winning route in the policy; the small opening progression rules expose currently relevant landmarks and the model picks among valid alternatives.
 
-## Planning without a live Codex hero
+Reused skills include navigate to a reachable map/tile, face/interact with an NPC or bag, choose starter, execute a legal battle action, and heal at Oldale's Center. Each stops on success, battle interruption, new meaningful menu, loss of control, or a bounded failure. Arrival alone does not prove healing; verify party HP/PP/status after the nurse interaction.
 
-The game already exposes finite progression through badges, inventory, event flags, and reachable maps. A deterministic progression frontier turns those facts into currently possible goals. Jev selects which goal to pursue and can change course when the state changes.
+If a wild encounter interrupts navigation, switch to the battle decision loop and reevaluate after it ends. A whiteout is recorded as failure/recovery, never a victory or an invisible reload. Repeated movement failures cause a local path recomputation; after a small configured retry bound, pause visibly with the failed action. Do not call Codex to repair the live run.
 
-An expensive planner is not part of the normal loop. A planner may later be evaluated as a rare recovery mechanism when the agent has repeated failures and the existing skills cannot produce a useful goal. Any such intervention must be visible in telemetry and excluded when measuring Jev-only performance.
+## Frontend
 
-## Skill contract
+Serve the emulator image and status on localhost. Prefer upstream streaming if usable; otherwise poll the latest JPEG around 10 times per second and status around 4 times per second. Neither rate controls Jev's decision cadence.
 
-Each skill has the same conceptual contract:
+Show game, run/pause state, current goal/action, full available-action distribution, latency, party/opponent HP, recent choices, and milestone progress. Clearly mark deterministic actions, pending calls, unavailable probabilities, API failures, and checkpoint starts. Do not generate a second LLM explanation for every decision. Pause/resume controls take effect without allowing a late model response to press buttons.
 
-- a precondition that determines when it is legal;
-- a semantic description shown to Jev;
-- an executor that performs deterministic inputs;
-- a postcondition that proves success;
-- a bounded failure result that returns control to the policy.
+## Milestones and evidence
 
-Examples are `navigate_to_landmark`, `cross_warp`, `talk_to_npc`, `heal_party`, `use_overworld_item`, `choose_move`, and `switch_party_member`.
+1. Verify emulator integration on this Mac with the matching Emerald ROM, a frame, and live RAM reads.
+2. Acquire a starter and complete Birch's rescue using Jev-selected choices.
+3. Travel through Oldale and complete the Route 103 rival encounter, including healing and wild-battle interruption.
+4. Demonstrate the entire configured opening continuously in the browser.
 
-Skills are ordinary application code written and tested during development. The live agent does not modify its own source code.
+Completion requires a recorded rival battle win followed by `FLAG_DEFEATED_RIVAL_ROUTE103`, plus a normally acquired starter in the party. Tests can replay explicit local checkpoints but do not count as a fresh run. A preexisting completion flag must not produce a new success event.
 
-## First vertical slice
+Run focused checks at starter selection, in an injured overworld state, during an encounter interrupt, and before the rival. Test the starter executor for all three choices; test at least three continuous runs with varied timing before calling the slice repeatable. Compare Jev with a deterministic legal-action policy on a small matched checkpoint set. Report model calls, tokens/cost when available, failures, and outcome; avoid performance claims from a single lucky win.
 
-The first slice is complete when a single local command starts the emulator bridge and frontend, and the browser shows a continuous run through Pallet Town, Route 1, and Viridian City. From varied health and position save states, the agent must:
+## Constraints
 
-- traverse multiple maps and doors;
-- handle dialogue and the parcel objective;
-- complete wild battles;
-- recognize low party health;
-- choose whether to heal or continue;
-- navigate to and use the Pokemon Center when selected;
-- show Jev's choices, probability distribution, latency, recent decisions, and progress live.
+- Target unmodified English Emerald SHA-1 `f3ae088181bf583e55daf962a92bb46f4f1d07b7` initially; reject mismatches.
+- Target the user's macOS ARM machine first; validate native bindings and Python compatibility before UI expansion.
+- No runtime Codex, accounts, database, queues, extra backend services, or self-modifying code.
+- No party injection, teleporting, story-flag writes, or silent fallback from Jev to a baseline.
+- Keep ROMs, saves, keys, upstream caches, and generated recordings out of Git.
+- Pin upstream revisions after the emulator probe and preserve applicable license notices.
+- Stop scope at the first rival victory. Full Hoenn, gyms, catching, team-building, and general exploration follow only after it works.
 
-## Evaluation
+## Current limit
 
-Every scenario runs with the same observation and skill layers under two policies:
-
-- Jev policy;
-- deterministic priority baseline.
-
-We record completion, recovery rate, invalid choices, decisions, latency, token usage, model cost, elapsed game time, and party outcome. Jev earns its place only if it improves meaningful choices or recovery enough to justify its calls.
-
-## Scope limits
-
-The first slice excludes the complete campaign, online self-modifying skills, authentication, a database, cloud deployment, multiplayer, and item-complete strategy. Those are considered only after the first multi-map run is reliable.
+This is a design, not a verified runtime. The native mGBA/PokéBot integration is the first technical gate. No matching ROM or live API connection has been validated for this project yet.
