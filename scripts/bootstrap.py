@@ -89,13 +89,38 @@ def install_native_archive() -> None:
                 target.write_bytes(data)
 
 
-def install_plugin() -> None:
-    source = PROJECT_ROOT / "plugins" / "jev_emerald.py"
-    target = POKEBOT_DIR / "plugins" / source.name
-    if target.exists() and target.read_bytes() != source.read_bytes():
-        raise RuntimeError(f"Refusing to overwrite modified plugin: {target}")
-    if not target.exists():
-        shutil.copy2(source, target)
+def _matching_plain_directory(source: Path, target: Path) -> bool:
+    source_files = {path.relative_to(source) for path in source.rglob("*") if path.is_file()}
+    target_files = {path.relative_to(target) for path in target.rglob("*") if path.is_file()}
+    if source_files != target_files:
+        return False
+    if any(path.is_symlink() for path in target.rglob("*")):
+        return False
+    return all((source / path).read_bytes() == (target / path).read_bytes() for path in source_files)
+
+
+def _install_source_link(source: Path, target: Path) -> None:
+    if target.is_symlink():
+        if target.resolve() == source.resolve():
+            return
+        raise RuntimeError(f"Refusing to replace unrelated link: {target}")
+    if target.exists():
+        if source.is_file() and target.is_file() and source.read_bytes() == target.read_bytes():
+            target.unlink()
+        elif source.is_dir() and target.is_dir() and _matching_plain_directory(source, target):
+            shutil.rmtree(target)
+        else:
+            raise RuntimeError(f"Refusing to replace unrelated path: {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    relative_source = os.path.relpath(source, target.parent)
+    target.symlink_to(relative_source, target_is_directory=source.is_dir())
+
+
+def install_local_sources() -> None:
+    _install_source_link(
+        PROJECT_ROOT / "plugins" / "jev_emerald.py",
+        POKEBOT_DIR / "plugins" / "jev_emerald.py",
+    )
 
 
 def native_environment() -> dict[str, str]:
@@ -151,7 +176,7 @@ def main() -> None:
     ensure_pokebot_checkout()
     run("uv", "sync", "--locked")
     install_native_archive()
-    install_plugin()
+    install_local_sources()
     probe = probe_native_import()
     mark_requirements_checked()
     plugin_probe = probe_plugin_registration()

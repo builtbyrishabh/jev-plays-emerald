@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Jev Plays Emerald</title>
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Live agent run</p>
+          <h1>Jev Plays Emerald</h1>
+        </div>
+        <div class="run-controls">
+          <span id="connection" class="connection">Connecting</span>
+          <button id="pause-control" type="button" disabled>Pause</button>
+        </div>
+      </header>
+
+      <div class="viewer-grid">
+        <section class="game-card" aria-label="Pokémon Emerald live video">
+          <div class="game-frame">
+            <img src="/stream_video?fps=15" alt="Live Pokémon Emerald gameplay">
+            <div class="screen-shine" aria-hidden="true"></div>
+          </div>
+          <div class="game-caption">
+            <span id="game-state">Waiting for game</span>
+            <span id="position">—</span>
+          </div>
+        </section>
+
+        <aside class="decision-panel" aria-label="Jev decision status">
+          <section class="status-card">
+            <div class="status-row">
+              <span id="phase-dot" class="phase-dot idle" aria-hidden="true"></span>
+              <div>
+                <p id="phase-label" class="phase-label">Starting</p>
+                <p id="phase-detail" class="muted">Waiting for agent state</p>
+              </div>
+            </div>
+            <p class="section-label">Current goal</p>
+            <p id="goal" class="goal">Waiting for the first game observation</p>
+            <div class="metric-row">
+              <div><span class="section-label">Active action</span><strong id="active-action">None</strong></div>
+              <div><span class="section-label">Latency</span><strong id="latency">—</strong></div>
+            </div>
+          </section>
+
+          <section class="panel-section">
+            <div class="section-heading">
+              <h2 id="actions-heading">Available actions</h2>
+              <span id="probability-note" class="muted">No decision yet</span>
+            </div>
+            <div id="actions" class="actions"><p class="empty">No meaningful choice right now.</p></div>
+          </section>
+
+          <section class="panel-section hp-section">
+            <h2>Battle state</h2>
+            <div id="party" class="hp-list"><p class="empty">No party data yet.</p></div>
+            <div id="opponent" class="hp-list"></div>
+          </section>
+
+          <section class="panel-section">
+            <h2>Opening progress</h2>
+            <ol id="progress" class="progress-list">
+              <li data-step="starter"><span></span>Choose starter</li>
+              <li data-step="rescue"><span></span>Rescue Birch</li>
+              <li data-step="rival"><span></span>Defeat rival</li>
+            </ol>
+          </section>
+
+          <section class="panel-section recent-section">
+            <h2>Recent choices</h2>
+            <ol id="recent" class="recent-list"><li class="empty">No choices yet.</li></ol>
+          </section>
+        </aside>
+      </div>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>

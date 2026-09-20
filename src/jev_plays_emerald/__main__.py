@@ -111,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ROM verified; profile ready: {arguments.profile}")
         return 0
 
-    print("Viewer: http://127.0.0.1:8888/stream_video?fps=15")
+    print("Viewer: http://127.0.0.1:8888/jev/index.html")
     command = [
         str(PROJECT_ROOT / ".venv" / "bin" / "python"),
         "pokebot.py",
