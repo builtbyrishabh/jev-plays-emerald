@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jev Plays Emerald — How It Actually Works</title>
+<style>
+:root{
+  --bg:#0b0f14; --bg2:#0f151c; --panel:#121a23; --line:#1e2b38;
+  --ink:#e6edf3; --mut:#8b9cb0;
+  --em:#34d399; --em2:#10b981; --blue:#60a5fa; --amber:#fbbf24; --rose:#fb7185; --violet:#a78bfa;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:17px;line-height:1.7;-webkit-font-smoothing:antialiased}
+.wrap{max-width:900px;margin:0 auto;padding:0 28px}
+
+/* hero */
+header{padding:100px 0 64px;border-bottom:1px solid var(--line);
+  background:radial-gradient(1200px 500px at 50% -10%,rgba(52,211,153,.10),transparent 70%)}
+.kicker{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--em);margin-bottom:20px}
+h1{font-size:54px;line-height:1.08;margin:0 0 22px;letter-spacing:-.025em;font-weight:700}
+h1 em{font-style:normal;color:var(--em)}
+.lede{font-size:21px;color:var(--mut);max-width:660px;margin:0}
+.lede strong{color:var(--ink);font-weight:600}
+
+/* structure */
+section{padding:72px 0;border-bottom:1px solid var(--line)}
+.num{font-family:var(--mono);font-size:12px;color:var(--em);letter-spacing:.16em;margin-bottom:14px}
+h2{font-size:33px;line-height:1.2;margin:0 0 10px;letter-spacing:-.02em;font-weight:700}
+h3{font-size:19px;margin:38px 0 12px;letter-spacing:-.01em;font-weight:650}
+.sub{color:var(--mut);font-size:18px;margin:0 0 30px}
+p{margin:0 0 18px}
+a{color:var(--em)}
+
+/* bits */
+code{font-family:var(--mono);font-size:.88em;background:#0d141c;border:1px solid var(--line);
+  border-radius:5px;padding:2px 6px;color:#a5d6c0}
+pre{font-family:var(--mono);font-size:13.5px;line-height:1.65;background:#0a1017;
+  border:1px solid var(--line);border-radius:12px;padding:20px 22px;overflow-x:auto;margin:0 0 20px}
+pre code{background:none;border:none;padding:0;color:#c9d7e4}
+.k{color:var(--violet)} .s{color:var(--em)} .n{color:var(--amber)}
+.c{color:#546b82;font-style:italic} .p{color:var(--blue)}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:24px 26px;margin:0 0 20px}
+.note{border-left:3px solid var(--em);background:linear-gradient(90deg,rgba(52,211,153,.07),transparent 60%);
+  border-radius:0 12px 12px 0;padding:18px 22px;margin:0 0 20px}
+.warn{border-left:3px solid var(--amber);background:linear-gradient(90deg,rgba(251,191,36,.07),transparent 60%);
+  border-radius:0 12px 12px 0;padding:18px 22px;margin:0 0 20px}
+.label{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--mut);margin-bottom:10px}
+
+/* pipeline */
+.pipe{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:12px;align-items:stretch;margin:34px 0}
+.stage{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:18px}
+.stage .t{font-weight:650;margin-bottom:6px;font-size:15px}
+.stage .d{font-size:13.5px;color:var(--mut);line-height:1.55}
+.arrow{align-self:center;color:var(--em);font-size:20px;font-family:var(--mono)}
+.stage.g{border-color:rgba(52,211,153,.4)}
+.stage.b{border-color:rgba(96,165,250,.4)}
+
+/* io columns */
+.io{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:0 0 22px}
+.io > div{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:20px}
+.io h4{margin:0 0 4px;font-size:15px;font-weight:650}
+.io .cap{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:12px}
+.in .cap{color:var(--blue)} .out .cap{color:var(--em)}
+ul{margin:0 0 18px;padding-left:22px} li{margin-bottom:7px}
+ul.tight li{margin-bottom:4px}
+
+/* table */
+table{width:100%;border-collapse:collapse;margin:0 0 22px;font-size:15px}
+th{text-align:left;font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--mut);font-weight:500;padding:0 14px 10px 0;border-bottom:1px solid var(--line)}
+td{padding:13px 14px 13px 0;border-bottom:1px solid #16212c;vertical-align:top}
+td:first-child{font-family:var(--mono);font-size:13px;color:var(--em);white-space:nowrap}
+
+/* bars */
+.bar{display:grid;grid-template-columns:190px 1fr 58px;gap:14px;align-items:center;margin-bottom:11px;font-size:14px}
+.bar .nm{font-family:var(--mono);font-size:13px;color:var(--ink)}
+.track{height:9px;background:#16212c;border-radius:6px;overflow:hidden}
+.fill{height:100%;border-radius:6px;background:linear-gradient(90deg,var(--em2),var(--em))}
+.fill.d{background:#2f4356}
+.pct{font-family:var(--mono);font-size:13px;color:var(--mut);text-align:right}
+
+/* verdict */
+.verdict{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line);
+  border-radius:14px;overflow:hidden;margin:26px 0}
+.verdict > div{padding:24px 26px}
+.verdict .code{background:rgba(96,165,250,.06);border-right:1px solid var(--line)}
+.verdict .model{background:rgba(52,211,153,.06)}
+.verdict h4{margin:0 0 14px;font-size:14px;font-family:var(--mono);letter-spacing:.1em;text-transform:uppercase}
+.verdict .code h4{color:var(--blue)} .verdict .model h4{color:var(--em)}
+.verdict ul{margin:0;padding-left:20px;font-size:14.5px}
+
+/* frame timeline */
+.frames{border-left:2px solid var(--line);margin:24px 0 24px 8px;padding-left:26px}
+.fr{position:relative;margin-bottom:22px}
+.fr::before{content:"";position:absolute;left:-33px;top:7px;width:10px;height:10px;border-radius:50%;
+  background:var(--bg);border:2px solid var(--em)}
+.fr .ft{font-family:var(--mono);font-size:12px;color:var(--em);margin-bottom:3px}
+.fr .fd{font-size:15px;color:var(--mut)}
+.fr .fd b{color:var(--ink);font-weight:600}
+
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:26px 0}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
+.stat .v{font-size:25px;font-weight:700;letter-spacing:-.02em;margin-bottom:3px}
+.stat .l{font-size:12.5px;color:var(--mut);line-height:1.4}
+.stat.e .v{color:var(--em)} .stat.b .v{color:var(--blue)} .stat.a .v{color:var(--amber)}
+
+footer{padding:52px 0 80px;color:var(--mut);font-size:14px}
+@media(max-width:780px){
+  h1{font-size:36px} .pipe{grid-template-columns:1fr} .arrow{transform:rotate(90deg);justify-self:center}
+  .io,.verdict,.stats{grid-template-columns:1fr} .verdict .code{border-right:none;border-bottom:1px solid var(--line)}
+  .bar{grid-template-columns:130px 1fr 48px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="kicker">Jev Plays Emerald · System Explainer</div>
+    <h1>How a model that can't<br>see pixels <em>plays Pokémon</em>.</h1>
+    <p class="lede">Built from first principles: start with what the model <strong>cannot</strong> do,
+    and derive every piece of the system as the minimum needed to close that gap.</p>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <div class="num">01 — THE PROBLEM</div>
+    <h2>Three things that don't fit together</h2>
+    <p class="sub">Before any code, state the mismatch precisely. Everything else is a consequence.</p>
+
+    <p>Pokémon Emerald is a Game Boy Advance ROM. It runs at <strong>60 frames per second</strong>, its
+    entire world lives in a few hundred kilobytes of binary RAM, and it accepts exactly ten inputs:
+    the D-pad, A, B, Start, Select, L, R.</p>
+
+    <p>Jev is a hosted model behind an HTTP endpoint. It takes roughly <strong>half a second to a second</strong>
+    to answer, it has no memory between calls, and it reads JSON.</p>
+
+    <p>Put them side by side and three specific impedance mismatches fall out:</p>
+
+    <div class="panel">
+      <p style="margin-bottom:14px"><b style="color:var(--rose)">Mismatch 1 — Representation.</b>
+      The game's state is raw memory addresses. The model needs facts. Nothing in
+      <code>0x02024A54</code> means "Torchic has 20 HP" without a decoder.</p>
+
+      <p style="margin-bottom:14px"><b style="color:var(--rose)">Mismatch 2 — Granularity.</b>
+      The game consumes button presses. A useful decision is "walk to Oldale Town." Between those two
+      sits a pathfinder, not a model. Asking a model to emit 400 D-pad presses is both wasteful and
+      hopeless.</p>
+
+      <p style="margin:0"><b style="color:var(--rose)">Mismatch 3 — Time.</b>
+      The game will not wait. During one ~600 ms model call, <strong>36 frames</strong> go by. Whatever
+      the model was looking at may no longer be true when its answer lands.</p>
+    </div>
+
+    <p>So the system is not "an AI playing Pokémon." It is three bridges, each one solving exactly one
+    mismatch — and a model sitting in the middle doing a smaller job than you'd expect.</p>
+
+    <div class="pipe">
+      <div class="stage b">
+        <div class="t">Observation</div>
+        <div class="d">RAM → typed JSON facts. Solves representation.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="stage g">
+        <div class="t">Jev</div>
+        <div class="d">Picks one option from a menu. Returns a probability distribution.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="stage b">
+        <div class="t">Action</div>
+        <div class="d">Intent → a frame-by-frame generator. Solves granularity.</div>
+      </div>
+    </div>
+    <p style="color:var(--mut);font-size:15px;margin:0">The loop that wraps all three solves time —
+    and it turns out to be the hardest part.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="num">02 — BRIDGE ONE</div>
+    <h2>What Jev receives</h2>
+    <p class="sub">Not pixels. Not a screenshot. A decoded snapshot of the world as structured facts.</p>
+
+    <p>Every single frame, <code>ObservationReader.read()</code> reaches into PokéBot's memory decoders
+    and builds one immutable <code>Observation</code>. This is the model's entire window onto the world:</p>
+
+    <table>
+      <tr><th>Field</th><th>What it carries</th></tr>
+      <tr><td>game_state</td><td>OVERWORLD, BATTLE, CHOOSE_STARTER, NAMING_SCREEN, TITLE_SCREEN…</td></tr>
+      <tr><td>position</td><td>Map group/number, local (x, y), facing direction</td></tr>
+      <tr><td>menu_phase<br>battle_phase</td><td>Which menu is open; whose turn it is inside a battle</td></tr>
+      <tr><td>party</td><td>Every Pokémon: species, level, HP/max, status, and each move with PP, type, power, accuracy, description</td></tr>
+      <tr><td>opponent</td><td>Species, level, HP/max, status — when in battle</td></tr>
+      <tr><td>active_battler</td><td>Which party slot is out, and which of its moves are <em>legally usable this turn</em></td></tr>
+      <tr><td>inventory</td><td>Every bag pocket flattened to name + quantity</td></tr>
+      <tr><td>opening_flags</td><td>5 story booleans: rescued_birch, received_pokedex, defeated_rival_route103, set_wall_clock, rival_left_for_route103</td></tr>
+      <tr><td>recent_outcomes</td><td>The last <b>12</b> actions and how each ended — the model's only memory</td></tr>
+      <tr><td>tasks / scripts</td><td>Which engine routines are currently running (how we detect cutscenes)</td></tr>
+      <tr><td>can_run</td><td>Whether escape is actually possible, computed from the real escape-chance formula</td></tr>
+    </table>
+
+    <h3>The one non-obvious field: <code>context_id</code></h3>
+    <p>A 16-character SHA-256 hash of a <em>deliberately chosen subset</em> of the state — game state, map,
+    menu phase, battle phase, party, inventory, flags, battlers. Coordinates are <strong>excluded on
+    purpose</strong>.</p>
+
+    <div class="note">
+      <p style="margin:0">Why exclude position? Because walking changes (x, y) sixty times a second. If
+      the id churned every frame, every model answer would arrive already expired. The
+      <code>context_id</code> answers a sharper question — <em>"is this still the same decision
+      situation?"</em> — not <em>"is this the same frame?"</em> It becomes the system's entire
+      correctness mechanism in §6.</p>
+    </div>
+
+    <p>One honest caveat is shipped <em>inside</em> the payload as <code>observation_note</code>, so the
+    model never over-trusts its window:</p>
+    <pre><code><span class="s">"HP values are exact observations read from game memory.
+ Opponent moves and future random outcomes are not provided."</span></code></pre>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="num">03 — BRIDGE TWO</div>
+    <h2>What Jev is allowed to say back</h2>
+    <p class="sub">Here's the design decision that makes the whole thing tractable.</p>
+
+    <p>The model never emits a button. It never emits free text. It never emits a plan. It picks
+    <strong>one ID from a list we hand it</strong> — and that list contains only actions that are legal
+    right now, in this exact state.</p>
+
+    <p>Each action ID maps to an <code>ExecutionPlan</code>: a Python generator that yields once per
+    emulator frame, plus a declaration of which game states it's allowed to run in.</p>
+
+    <table>
+      <tr><th>Action</th><th>Becomes</th></tr>
+      <tr><td>starter:treecko</td><td>Nudge the cursor left, press A until a party member exists, then <b>verify the acquired species actually matches</b> — or raise</td></tr>
+      <tr><td>battle-move:0</td><td>Drive the battle menu to move slot 0 and confirm</td></tr>
+      <tr><td>goal:oldale</td><td>Full pathfind to Oldale Town — hundreds of frames of walking, with stall detection</td></tr>
+      <tr><td>heal:oldale</td><td>Enter the Pokémon Center, heal, then <b>assert</b> HP, status and PP are all actually restored</td></tr>
+      <tr><td>dialogue:advance</td><td>Hold the right button through a cutscene until the script stack empties</td></tr>
+      <tr><td>battle-run</td><td>Scroll to RUN and confirm — refuses outright if escape chance is zero</td></tr>
+      <tr><td>setup:name</td><td>A fixed 16-button keyboard sequence to type "JEV". Configuration, never a model choice.</td></tr>
+    </table>
+
+    <p>The labels are not terse IDs — they're written to be self-explanatory, because they're the only
+    description of the options the model gets. Real text sent during a battle:</p>
+
+    <pre><code>{
+  <span class="p">"battle-move:0"</span>: <span class="s">"Use Pound (Normal, 35/35 PP, 100% accuracy, 40 power).
+                     Pounds the foe with forelegs or tail."</span>,
+  <span class="p">"battle-move:1"</span>: <span class="s">"Use Leer (Normal, 30/30 PP, 100% accuracy).
+                     Frightens the foe with a leer to lower DEFENSE."</span>
+}</code></pre>
+
+    <div class="note">
+      <p style="margin:0">Illegal moves are filtered out <em>before</em> the model ever sees them — zero
+      PP, disabled, or blocked by the engine. The model cannot choose a bad action because a bad action
+      is never on the menu. This is the difference between validating output and constraining it.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="num">04 — THE MODEL</div>
+    <h2>Jev isn't a chatbot</h2>
+    <p class="sub">This is the part most people get wrong about the project.</p>
+
+    <p>Jev is reached at <code>typesafe-ai/jev</code> through Vercel AI Gateway's
+    <strong>evaluation-model</strong> endpoint. It is not a text generator with a JSON mode bolted on.
+    Its native output <em>is</em> a probability distribution over labelled options.</p>
+
+    <div class="io">
+      <div class="in">
+        <div class="cap">We send</div>
+        <h4>state + one question</h4>
+        <ul class="tight" style="font-size:14.5px;color:var(--mut);margin-top:12px">
+          <li>The full Observation as JSON</li>
+          <li>A <code>choice</code> question</li>
+          <li><code>criteria</code>: the legal ID → label map</li>
+          <li>A static instruction string</li>
+        </ul>
+      </div>
+      <div class="out">
+        <div class="cap">We get back</div>
+        <h4>a distribution</h4>
+        <ul class="tight" style="font-size:14.5px;color:var(--mut);margin-top:12px">
+          <li>The chosen ID</li>
+          <li>A probability for <em>every</em> option</li>
+          <li>A confidence score</li>
+          <li>Token usage</li>
+        </ul>
+      </div>
+    </div>
+
+    <pre><code><span class="c">// POST https://ai-gateway.vercel.sh/v4/ai/evaluation-model</span>
+{
+  <span class="p">"state"</span>: { <span class="c">/* the whole Observation from §2 */</span> },
+  <span class="p">"questions"</span>: {
+    <span class="p">"action"</span>: {
+      <span class="p">"type"</span>: <span class="s">"choice"</span>,
+      <span class="p">"instructions"</span>: <span class="s">"...the mission, see §5..."</span>,
+      <span class="p">"criteria"</span>: {
+        <span class="p">"starter:treecko"</span>: <span class="s">"Choose Treecko"</span>,
+        <span class="p">"starter:torchic"</span>: <span class="s">"Choose Torchic"</span>,
+        <span class="p">"starter:mudkip"</span>:  <span class="s">"Choose Mudkip"</span>
+      }
+    }
+  }
+}</code></pre>
+
+    <h3>A real answer, from your own run log</h3>
+    <p style="color:var(--mut);font-size:15px">Pulled verbatim from
+    <code>.cache/task3-live-decisions.jsonl</code> — the moment Jev picked a starter:</p>
+
+    <div class="panel">
+      <div class="label">Distribution returned</div>
+      <div class="bar"><span class="nm">starter:treecko</span><span class="track"><span class="fill" style="width:51%"></span></span><span class="pct">0.51</span></div>
+      <div class="bar"><span class="nm">starter:torchic</span><span class="track"><span class="fill d" style="width:29%"></span></span><span class="pct">0.29</span></div>
+      <div class="bar"><span class="nm">starter:mudkip</span><span class="track"><span class="fill d" style="width:20%"></span></span><span class="pct">0.20</span></div>
+      <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line);font-size:14px;color:var(--mut);font-family:var(--mono)">
+        chosen: <span style="color:var(--em)">starter:treecko</span> &nbsp;·&nbsp;
+        confidence: 0.27 &nbsp;·&nbsp; latency: 969 ms &nbsp;·&nbsp; 533 in / 51 out tokens
+      </div>
+    </div>
+
+    <p>Notice the confidence is <strong>0.27</strong> while the top probability is 0.51. The model is
+    telling you it genuinely isn't sure — all three starters are viable, and it knows it. That
+    signal is preserved rather than flattened away.</p>
+
+    <h3>Every answer is checked before it can move a single pixel</h3>
+    <p><code>validate_choice()</code> rejects the response outright unless all of this holds:</p>
+    <ul>
+      <li>the answer type is exactly <code>"choice"</code></li>
+      <li>the chosen ID is one we actually offered</li>
+      <li>the probability keys are <em>exactly</em> our legal ID set — no extras, none missing</li>
+      <li>every probability is finite and non-negative</li>
+      <li>they sum to 1.0 within 0.01</li>
+      <li>confidence, if present, sits in [0, 1]</li>
+    </ul>
+    <p>Anything else raises, and the run pauses for a human. The model is trusted to have taste, never
+    trusted to be well-formed.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="num">05 — THE INSTRUCTIONS</div>
+    <h2>Is it guided step-by-step?</h2>
+    <p class="sub">The honest answer is: <em>half</em>. And the half matters.</p>
+
+    <p>First, here is the <strong>complete, verbatim instruction</strong> passed to Jev. Not an excerpt —
+    this is all of it, it is a constant in the source, and it is byte-identical on every call from the
+    title screen to the final rival battle:</p>
+
+    <pre><code><span class="s">"Your mission is to acquire a starter, rescue Birch, and win the
+ first rival battle on Route 103. Choose exactly one legal action
+ for the current Pokemon Emerald state. Treat the probabilities as
+ your preferences over the offered actions."</span></code></pre>
+
+    <p>Three sentences. A goal, a format rule, and a semantics note. That's the entire prompt.</p>
+
+    <div class="warn">
+      <p style="margin:0"><b>So no — there is no step-by-step script in the prompt.</b> The model is
+      never told "now go upstairs," never given a hint about the next step, never shown a plan, never
+      told what it did last turn beyond the raw outcome list. It gets a mission and a menu.</p>
+    </div>
+
+    <h3>But the route is absolutely guided — in the code</h3>
+    <p>The step-by-step-ness is real. It just lives in <code>opening.py</code>, not in the prompt.
+    <code>_opening_actions()</code> is a hand-written state machine keyed on map ID and story flags, and
+    for most of the opening <strong>it returns exactly one legal action</strong>:</p>
+
+    <pre><code><span class="k">if</span> here == INSIDE_OF_TRUCK:      → <span class="s">"Step out of the moving truck"</span>
+<span class="k">if</span> here == own_house_1F:        → <span class="s">"Set the bedroom clock"</span> <span class="c">/ or leave home</span>
+<span class="k">if</span> here == own_house_2F:        → <span class="s">"Interact with the bedroom clock"</span>
+<span class="k">if</span> here == rival_house_1F:      → <span class="s">"Meet the new neighbor upstairs"</span>
+<span class="k">if</span> <span class="k">not</span> observation.party:       → <span class="s">"Investigate Birch's call for help"</span>
+<span class="k">if</span> here <span class="k">in</span> {LITTLEROOT, RT101}:  → <span class="s">"Travel to Oldale Town"</span></code></pre>
+
+    <p>And here is the consequence that ties it together:</p>
+
+    <div class="note">
+      <p style="margin:0"><b>When only one action is legal, Jev is not called at all.</b> The loop takes
+      the single option directly and records the decision as
+      <code>source: "deterministic"</code> — no HTTP request, no tokens, no latency. Walking through
+      Littleroot costs nothing because there was never a decision to make.</p>
+    </div>
+
+    <p>Which means Jev is consulted at exactly four kinds of fork in this scope:</p>
+
+    <div class="stats">
+      <div class="stat e"><div class="v">3</div><div class="l">Which starter — Treecko, Torchic, Mudkip</div></div>
+      <div class="stat e"><div class="v">2–4</div><div class="l">Which move, every battle turn</div></div>
+      <div class="stat e"><div class="v">2</div><div class="l">Heal at the Center first, or go fight</div></div>
+      <div class="stat e"><div class="v">+1</div><div class="l">Flee, when escape is actually possible</div></div>
+    </div>
+
+    <p style="margin-bottom:0"><strong>The split, stated plainly:</strong> navigation is authored,
+    tactics are free. The code decides <em>where you are allowed to stand</em>; Jev decides
+    <em>what you do when standing there matters</em>.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="num">06 — BRIDGE THREE</div>
+    <h2>Solving time: one decision, frame by frame</h2>
+    <p class="sub">The model takes ~600 ms. The game runs at 16.7 ms per frame. Here's how that gap is survived.</p>
+
+    <div class="frames">
+      <div class="fr"><div class="ft">frame 0</div><div class="fd">Read RAM → build <b>Observation</b>. Compute <code>context_id</code>. Compute legal actions: 2 moves available.</div></div>
+      <div class="fr"><div class="ft">frame 0</div><div class="fd">More than one option → fire the HTTP request on a <b>single-slot worker thread</b>. A second concurrent request is structurally impossible; the worker raises if one is already in flight.</div></div>
+      <div class="fr"><div class="ft">frames 1–35</div><div class="fd">The emulator keeps running. Every frame, held buttons are <b>explicitly released</b> so a stale input can't leak through while we're thinking. The loop keeps observing.</div></div>
+      <div class="fr"><div class="ft">frame 36</div><div class="fd">Answer arrives. Now the critical test — <b>is it still valid?</b></div></div>
+      <div class="fr"><div class="ft">frame 36</div><div class="fd">Four staleness checks: are we paused? did the <b>generation counter</b> move? does the <code>context_id</code> still match? is the legal action set unchanged? <b>Any one fails → the answer is discarded</b>, logged, and re-asked against fresh state.</div></div>
+      <div class="fr"><div class="ft">frame 37+</div><div class="fd">Valid → the action's generator starts, advancing <b>one step per frame</b>, re-checking its guards every single frame.</div></div>
+    </div>
+
+    <p>That discard path is not theoretical. Your own <code>runs/decisions.jsonl</code> logged
+    <strong>15 discarded answers</strong> — 15 times the world moved while Jev was thinking, and the
+    system correctly threw the answer away instead of acting on a stale belief.</p>
+
+    <h3>Rails that hold while an action runs</h3>
+    <table>
+      <tr><th>Guard</th><th>Behaviour</th></tr>
+      <tr><td>context changed</td><td>Checked <em>before</em> execution starts — action fails rather than acting on a stale premise</td></tr>
+      <tr><td>state escape</td><td>Game state leaves the plan's allowed set (a wild battle interrupts a walk) → <b>INTERRUPTED</b>, buttons released</td></tr>
+      <tr><td>unexpected menu</td><td>A menu opens that this plan didn't expect → INTERRUPTED</td></tr>
+      <tr><td>frame_limit 3600</td><td>60 seconds of wall clock. Nothing can hang the run forever.</td></tr>
+      <tr><td>stall detection</td><td>45 overworld frames with no movement → replan the path (max 2 replans, then fail)</td></tr>
+      <tr><td>pause</td><td>Honoured on the next frame boundary, mid-action, with inputs released</td></tr>
+      <tr><td>retry policy</td><td>Only timeouts, 429 and 5xx retry, and at most twice. A wrong answer is never retried into existence.</td></tr>
+      <tr><td>any FAILED</td><td>The run <b>pauses itself</b> and waits for a human. It does not guess.</td></tr>
+    </table>
+
+    <p>Interruptions aren't just abandoned, either. The interrupted action is remembered, and once the
+    world settles it is re-validated against the <em>new</em> legal set — resumed only if it's still a
+    legal thing to want.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="num">07 — THE SCORECARD</div>
+    <h2>Who actually does the work</h2>
+    <p class="sub">Worth being blunt about, because it's the most interesting thing in the design.</p>
+
+    <div class="verdict">
+      <div class="code">
+        <h4>The harness decides</h4>
+        <ul>
+          <li>Where to walk, and the whole route through the opening</li>
+          <li>Which actions are legal at all</li>
+          <li>How every intent becomes button presses</li>
+          <li>When to ask, and when not to bother</li>
+          <li>Whether an answer is still valid on arrival</li>
+          <li>When to stop and call a human</li>
+          <li>Typing the name, setting the clock, advancing cutscenes</li>
+        </ul>
+      </div>
+      <div class="model">
+        <h4>Jev decides</h4>
+        <ul>
+          <li>Which starter to take</li>
+          <li>Which move to use, every battle turn</li>
+          <li>Whether to heal before the rival fight</li>
+          <li>Whether to flee a wild encounter</li>
+        </ul>
+        <p style="margin:16px 0 0;font-size:14px;color:var(--mut)">Small surface. But it's the surface
+        where judgement actually matters — and the one place a scripted bot would need a hand-tuned
+        heuristic instead.</p>
+      </div>
+    </div>
+
+    <p>This is the real architectural claim of the project: <strong>the model is a policy, not a
+    driver.</strong> It's consulted at forks and constrained everywhere else. That's what makes the run
+    reproducible, auditable, cheap, and safe to leave running.</p>
+
+    <h3>What it costs</h3>
+    <div class="stats">
+      <div class="stat b"><div class="v">~600ms</div><div class="l">Typical decision latency (observed 498–969 ms)</div></div>
+      <div class="stat b"><div class="v">533</div><div class="l">Input tokens for a starter choice; ~1,050 mid-battle</div></div>
+      <div class="stat a"><div class="v">$0.000022</div><div class="l">Cost of one decision at $0.000000042/token</div></div>
+      <div class="stat a"><div class="v">$0</div><div class="l">Output tokens are free on this endpoint</div></div>
+    </div>
+    <p style="margin-bottom:0">Roughly <strong>two thousandths of a cent</strong> per decision. The
+    expensive resource here was never tokens — it was correctness.</p>
+  </div>
+</section>
+
+<section style="border-bottom:none">
+  <div class="wrap">
+    <div class="num">08 — IN ONE BREATH</div>
+    <h2>The whole system</h2>
+    <p style="font-size:19px;line-height:1.75;color:var(--mut);max-width:700px">
+      Every frame, decode RAM into typed facts and hash them into a
+      <span style="color:var(--ink)">context_id</span>. Compute which actions are legal right now.
+      <span style="color:var(--ink)">If exactly one is legal, just do it</span> — no model involved.
+      If several are, send the facts plus that menu to Jev with a fixed three-sentence mission, on a
+      single-slot worker so the emulator never blocks. When the distribution comes back, validate its
+      shape, then check the world hasn't moved underneath it —
+      <span style="color:var(--ink)">discard it if it has</span>. Otherwise turn the chosen ID into a
+      generator that advances one frame at a time, re-checking its guards continuously, and
+      <span style="color:var(--ink)">pause for a human the moment anything fails</span>.
+    </p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    Generated from the source in <code>src/jev_plays_emerald/</code> — the observation builder
+    (<code>state.py</code>), action catalogue (<code>actions.py</code>), legal-move gating
+    (<code>opening.py</code>), decision loop (<code>mode.py</code>) and gateway client
+    (<code>jev.py</code>). All probabilities, latencies and token counts are real values taken from
+    the run logs in <code>.cache/</code> and <code>runs/decisions.jsonl</code>.
+  </div>
+</footer>
+
+</body>
+</html>
