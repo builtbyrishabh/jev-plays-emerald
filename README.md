@@ -34,5 +34,6 @@ See [measured results](docs/results.md) for repeatability, failures, costs, and 
 - [Reuse decisions](docs/reuse.md)
 - [Vercel gateway integration](docs/jev-gateway.md)
 - [TypeScript decision service](docs/decision-service.md)
+- [Replaying recorded decisions](docs/replay.md)
 
 The app uses pinned mGBA/PokéBot Gen3, Python, and one local server with plain HTML/CSS/JavaScript. There is no live Codex planner, database, or additional backend service.
