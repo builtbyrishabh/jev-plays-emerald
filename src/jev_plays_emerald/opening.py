@@ -174,6 +174,74 @@ def party_needs_healing(party: tuple[PartyMember, ...]) -> bool:
                or any(move.pp < move.max_pp for move in member.moves) for member in party)
 
 
+_BASE_MISSION = (
+    "You are playing Pokemon Emerald. Your mission, in order: get a starter Pokemon, "
+    "rescue Professor Birch, then travel north and beat your rival on Route 103. "
+    "Choose exactly one legal action for the current state and treat the probabilities "
+    "as your preference over the offered actions."
+)
+
+
+def decision_instructions(observation: Observation) -> str:
+    """Mission text plus a hint for the situation Jev is actually deciding in.
+
+    The open-world action set deliberately carries no route opinion, so the
+    guidance the model needs to make a good choice lives here instead: which
+    direction the story wants next, and how to play the battle in front of it.
+    This nudges without deciding - every listed action stays Jev's to pick.
+    """
+
+    hint = _situation_hint(observation)
+    return f"{_BASE_MISSION} {hint}" if hint else _BASE_MISSION
+
+
+def _situation_hint(observation: Observation) -> str:
+    if observation.game_state == "CHOOSE_STARTER" or observation.menu_phase == "starter":
+        return (
+            "This is your starter choice: Treecko (Grass), Torchic (Fire), or Mudkip (Water). "
+            "Any of them can win the opening, so pick one and commit. Expect the rival to "
+            "carry the starter that beats your type."
+        )
+    if observation.game_state == "BATTLE":
+        if observation.trainer_id in RIVAL_TRAINER_IDS:
+            return (
+                "This is the rival battle that completes your mission. Their lone Pokemon is "
+                "under-levelled, so attack with your highest-damage move every turn and never run."
+            )
+        if observation.trainer_id is not None:
+            return "This is a trainer battle. Use your strongest damaging move and do not run."
+        return (
+            "This is a wild battle. End it fast with your highest-damage move; only run if your "
+            "Pokemon is close to fainting and you need it healthy for the rival."
+        )
+    flags = observation.opening_flags
+    if not flags.set_wall_clock:
+        return (
+            "You just moved into your new house in Littleroot Town. The game will not let you "
+            "leave yet: first go up to your bedroom and examine the wall clock to set the time, "
+            "then head back downstairs. Do not try to leave the house until the clock is set."
+        )
+    if not observation.party:
+        return (
+            "You have no Pokemon yet. Professor Birch is being attacked on Route 101, straight "
+            "north of Littleroot Town - leave the house and head north to reach his bag."
+        )
+    if not flags.rescued_birch:
+        return "Finish helping Professor Birch, then follow where he leads."
+    if not flags.defeated_rival_route103:
+        hint = (
+            "Head north out of Littleroot: cross Route 101, pass through Oldale Town, then go up "
+            "Route 103 to find and challenge your rival."
+        )
+        if party_needs_healing(observation.party):
+            hint += (
+                " Your party is hurt - healing for free at the Oldale Town Pokemon Center before "
+                "the rival fight is usually worth it."
+            )
+        return hint
+    return ""
+
+
 def _opening_actions(observation: Observation) -> tuple[Action, ...]:
     from modules.map_data import MapRSE
 

@@ -13,7 +13,12 @@ from modules.modes import BattleAction, BotMode
 
 from jev_plays_emerald.actions import Action, ActionExecutor, FrameState, Outcome
 from jev_plays_emerald.jev import JevChoice, JevGatewayError, JevTimeoutError, JsonValue
-from jev_plays_emerald.opening import RivalProgress, legal_actions, open_world_spike_enabled
+from jev_plays_emerald.opening import (
+    RivalProgress,
+    decision_instructions,
+    legal_actions,
+    open_world_spike_enabled,
+)
 from jev_plays_emerald.service import default_choice_client
 from jev_plays_emerald.state import Observation, ObservationReader, RecentOutcome
 from jev_plays_emerald.telemetry import DecisionTelemetry
@@ -51,11 +56,6 @@ class _SingleRequestWorker:
 
 
 _MODEL_WORKER = _SingleRequestWorker()
-_DECISION_INSTRUCTIONS = (
-    "Your mission is to acquire a starter, rescue Birch, and win the first rival battle on Route 103. "
-    "Choose exactly one legal action for the current Pokemon Emerald state. "
-    "Treat the probabilities as your preferences over the offered actions."
-)
 
 
 @dataclass(frozen=True)
@@ -309,6 +309,7 @@ class JevEmeraldMode(BotMode):
         options: dict[str, JsonValue | None] = {
             action.id: action.label for action in actions
         }
+        instructions = decision_instructions(observation)
         with self._state_lock:
             if (
                 self._paused
@@ -324,7 +325,7 @@ class JevEmeraldMode(BotMode):
                     self._gateway,
                     state,
                     options,
-                    _DECISION_INSTRUCTIONS,
+                    instructions,
                 )
             except RuntimeError:
                 return
@@ -342,7 +343,7 @@ class JevEmeraldMode(BotMode):
                 attempt=attempt,
                 state=state,
                 criteria=options,
-                instructions=_DECISION_INSTRUCTIONS,
+                instructions=instructions,
             )
             self._telemetry.pending(context_id=observation.context_id, attempt=attempt)
 
