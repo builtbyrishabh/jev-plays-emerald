@@ -80,7 +80,11 @@ class JevEmeraldMode(BotMode):
         model_worker: Executor | None = None,
         telemetry: DecisionTelemetry | None = None,
     ):
-        self._observation_reader = ObservationReader() if observation_reader is None else observation_reader
+        self._observation_reader = (
+            ObservationReader(landmarks=open_world_spike_enabled())
+            if observation_reader is None
+            else observation_reader
+        )
         self._paused = False
         self._progress = RivalProgress()
         self._latest_observation: Observation | None = None

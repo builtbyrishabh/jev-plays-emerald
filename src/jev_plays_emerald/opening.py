@@ -254,9 +254,13 @@ def open_world_spike_enabled() -> bool:
 def open_world_actions(observation: Observation) -> tuple[Action, ...]:
     """Offer the primitives available here, with no opinion about the goal.
 
-    Spike for issue #2. Deliberately contains no destination the story needs:
-    no "go fight the rival", no "walk to Oldale". Only exits, people, objects
-    and neighbouring maps - Jev works out the route from those.
+    Deliberately contains no destination the story needs: no "go fight the
+    rival", no "walk to Oldale". Only exits, people, objects and neighbouring
+    maps - Jev works out the route from those.
+
+    Pure logic over Observation fields. `state.py` already read this map's
+    landmarks on the emulator thread, so nothing here touches PokeBot - which
+    is also what keeps this testable without an emulator.
 
     IDs and labels come from static map definitions rather than live object
     positions, so the offered tuple is byte-identical between frames. A set
@@ -264,74 +268,43 @@ def open_world_actions(observation: Observation) -> tuple[Action, ...]:
     the run would never commit to an action.
     """
 
-    from modules.map import get_map_data_for_current_position, get_map_objects
-
-    location = get_map_data_for_current_position()
-    if location is None:
-        return ()
-
     def act(identifier: str, label: str) -> Action:
         return Action(identifier, label, observation.context_id)
 
-    group, number = location.map_group_and_number
     choices: list[Action] = []
 
-    # Two warps that land on the same map are the same choice to a player, and
+    # Two exits that land on the same map are the same choice to a player, and
     # offering both splits Jev's probability mass between identical options.
     seen_destinations: set[tuple[int, int]] = set()
-    for warp in location.warps:
-        x, y = warp.local_coordinates
-        try:
-            destination = warp.destination_location
-            key = destination.map_group_and_number
-            name = _destination_name(key, destination.map_name)
-        except (RuntimeError, ValueError, IndexError):
+    for exit_ in observation.exits:
+        if exit_.destination_id in seen_destinations:
             continue
-        if key in seen_destinations:
-            continue
-        seen_destinations.add(key)
-        choices.append(act(f"walk:{group}:{number}:{x}:{y}", f"Go through the doorway at ({x}, {y}) into {name}"))
-
-    for connection in location.connections:
-        try:
-            neighbour = connection.destination_map
-            width, height = neighbour.map_size
-            key = neighbour.map_group_and_number
-            name = _destination_name(key, neighbour.map_name)
-        except (RuntimeError, ValueError, IndexError):
-            continue
-        if key in seen_destinations:
-            continue
-        seen_destinations.add(key)
-        choices.append(
-            act(
-                f"walk:{key[0]}:{key[1]}:{width // 2}:{height // 2}",
-                f"Travel {connection.direction} out of here into {name}",
-            )
+        seen_destinations.add(exit_.destination_id)
+        group, number = exit_.target_map
+        x, y = exit_.target_coordinates
+        label = (
+            f"Travel {exit_.direction} out of here into {exit_.destination_name}"
+            if exit_.direction
+            else f"Go through the doorway at ({x}, {y}) into {exit_.destination_name}"
         )
+        choices.append(act(f"walk:{group}:{number}:{x}:{y}", label))
 
-    loaded = {npc.local_id for npc in get_map_objects()}
-    for template in location.objects:
-        if template.kind != "normal" or template.local_id not in loaded:
-            continue
-        x, y = template.local_coordinates
-        who = _readable_symbol(template.script_symbol) or "someone"
-        if template.trainer_type != "None":
-            state = "already beaten" if template.is_trainer_defeated else "not yet battled"
+    for npc in observation.objects:
+        x, y = npc.coordinates
+        who = _readable_symbol(npc.script_symbol) or "someone"
+        if npc.trainer_type != "None":
+            state = "already beaten" if npc.trainer_defeated else "not yet battled"
             label = f"Approach and talk to {who} at ({x}, {y}), a trainer you have {state}"
         else:
             label = f"Approach and talk to {who} at ({x}, {y})"
-        choices.append(act(f"talk:{template.local_id}", label))
+        choices.append(act(f"talk:{npc.local_id}", label))
 
-    for event in location.bg_events:
-        x, y = event.local_coordinates
-        if event.kind == "Hidden Item":
-            try:
-                label = f"Search the ground at ({x}, {y}), where a {event.hidden_item.name} is hidden"
-            except (RuntimeError, ValueError):
-                continue
+    for sign in observation.signs:
+        x, y = sign.coordinates
+        if sign.hidden_item:
+            label = f"Search the ground at ({x}, {y}), where a {sign.hidden_item} is hidden"
         else:
-            what = _readable_symbol(event.script_symbol) or "object"
+            what = _readable_symbol(sign.script_symbol) or "object"
             label = f"Walk up to and examine the {what} at ({x}, {y})"
         choices.append(act(f"interact:{x}:{y}", label))
 
@@ -382,19 +355,22 @@ def recently_futile(observation: Observation, threshold: int = FUTILE_ATTEMPTS) 
     return ((futile | impossible) - succeeded) | repeated
 
 
+# MapRSE.OLDALE_TOWN and MapRSE.ROUTE103, written out so the enumerator stays
+# pure data. `test_heal_map_ids_match_pokebot` pins them to PokeBot's table.
+OLDALE_HEAL_MAPS = frozenset({(0, 10), (0, 18)})
+
+
 def _reachable_heal_actions(observation: Observation) -> tuple[Action, ...]:
     """Offer a Pokémon Center run when the party needs it and one is walkable.
 
     The open-world menu otherwise has no way to heal, so a fainted or worn-down
     party would be stuck. Only Oldale's Center is reachable in the opening; the
     heal executor walks there and back, so it is offered from the town and the
-    route it borders. Extending this to every visited Center is step-6 work.
+    route it borders. Extending this to every visited Center is later work.
     """
 
-    from modules.map_data import MapRSE
-
     here = observation.position.map_id if observation.position is not None else None
-    if here not in {MapRSE.OLDALE_TOWN.value, MapRSE.ROUTE103.value}:
+    if here not in OLDALE_HEAL_MAPS:
         return ()
     if not party_needs_healing(observation.party):
         return ()
@@ -405,22 +381,6 @@ def _reachable_heal_actions(observation: Observation) -> tuple[Action, ...]:
             observation.context_id,
         ),
     )
-
-
-def _destination_name(map_id: tuple[int, int], fallback: str) -> str:
-    """Name a destination by map identity, not by its on-screen town name.
-
-    Emerald gives a house interior the same display name as the town around it,
-    so `map_name` alone told Jev that the staircase and the front door both led
-    to Littleroot Town.
-    """
-
-    from modules.map_data import MapRSE
-
-    try:
-        return MapRSE(map_id).name.replace("_", " ").title()
-    except ValueError:
-        return fallback
 
 
 def _readable_symbol(symbol: str) -> str:

@@ -20,6 +20,44 @@ class MapPosition:
 
 
 @dataclass(frozen=True)
+class MapExit:
+    """A doorway or map edge, with the tile to walk to in order to use it.
+
+    A doorway is walked to on the current map; a map connection is walked to on
+    the neighbour itself, so the target map is carried rather than assumed.
+    `direction` is empty for a doorway and set for a connection, which is also
+    how the two are told apart downstream.
+    """
+
+    target_map: tuple[int, int]
+    target_coordinates: tuple[int, int]
+    destination_id: tuple[int, int]
+    destination_name: str
+    direction: str = ""
+
+
+@dataclass(frozen=True)
+class MapObject:
+    """A person or interactive object currently loaded on this map."""
+
+    local_id: int
+    coordinates: tuple[int, int]
+    script_symbol: str
+    trainer_type: str = "None"
+    trainer_defeated: bool = False
+
+
+@dataclass(frozen=True)
+class MapSign:
+    """A background event: a sign, an examinable object, or a hidden item."""
+
+    coordinates: tuple[int, int]
+    kind: str
+    script_symbol: str = ""
+    hidden_item: str = ""
+
+
+@dataclass(frozen=True)
 class MoveState:
     name: str
     pp: int
@@ -103,6 +141,11 @@ class Observation:
     rival_house_state: int = 0
     lab_state: int = 0
     player_gender: str = "male"
+    # Landmarks of the current map, read here so the option enumerator is pure
+    # logic over these fields instead of live PokeBot map calls.
+    exits: tuple[MapExit, ...] = ()
+    objects: tuple[MapObject, ...] = ()
+    signs: tuple[MapSign, ...] = ()
 
 
 def observation_context_id(
@@ -136,8 +179,12 @@ def observation_context_id(
 class ObservationReader:
     """Capture all RAM-backed fields together on the thread that owns mGBA."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, landmarks: bool = False) -> None:
         self._owner_thread = threading.get_ident()
+        # Reading the map costs a table lookup per warp and per connection, every
+        # frame. Only the open-world enumerator consumes them, so the caller that
+        # knows whether it is running asks for them.
+        self.landmarks = landmarks
 
     def read(self, recent_outcomes: tuple[RecentOutcome, ...] = ()) -> Observation:
         if threading.get_ident() != self._owner_thread:
@@ -251,11 +298,12 @@ class ObservationReader:
             active_battler,
             opponent,
         )
+        controllable = player_avatar_is_controllable() if state is GameState.OVERWORLD else False
         return Observation(
             context_id,
             game_state,
             position,
-            player_avatar_is_controllable() if state is GameState.OVERWORLD else False,
+            controllable,
             menu_phase,
             battle_phase,
             party,
@@ -271,7 +319,105 @@ class ObservationReader:
             rival_house_state=get_event_var("LITTLEROOT_RIVAL_STATE"),
             lab_state=get_event_var("BIRCH_LAB_STATE"),
             player_gender=get_player().gender,
+            **_read_landmarks(position if controllable and self.landmarks else None),
         )
+
+
+def _read_landmarks(position: MapPosition | None) -> dict[str, tuple]:
+    """Read the current map's static landmarks on the emulator owner thread.
+
+    Everything the option enumerator needs about where it can go and who it can
+    talk to becomes plain data here, so the enumerator itself never calls
+    PokeBot. Any map lookup that fails is skipped rather than guessed at: an
+    absent landmark costs one option, an invented one costs a stuck run.
+
+    Callers pass `None` when nothing will read the result: outside walkable
+    overworld control, where there is no map to leave and nobody to walk up to,
+    or when the scripted route is driving and the enumerator is not running.
+    """
+
+    if position is None:
+        return {}
+
+    from modules.map import get_map_data_for_current_position, get_map_objects
+
+    location = get_map_data_for_current_position()
+    if location is None:
+        return {}
+
+    here = tuple(location.map_group_and_number)
+    exits: list[MapExit] = []
+    for warp in location.warps:
+        try:
+            destination = warp.destination_location
+            key = tuple(destination.map_group_and_number)
+            name = _map_name(key, destination.map_name)
+        except (RuntimeError, ValueError, IndexError):
+            continue
+        exits.append(MapExit(here, tuple(warp.local_coordinates), key, name))
+    for connection in location.connections:
+        try:
+            neighbour = connection.destination_map
+            width, height = neighbour.map_size
+            key = tuple(neighbour.map_group_and_number)
+            name = _map_name(key, neighbour.map_name)
+        except (RuntimeError, ValueError, IndexError):
+            continue
+        exits.append(MapExit(key, (width // 2, height // 2), key, name, connection.direction))
+
+    loaded = {npc.local_id for npc in get_map_objects()}
+    objects: list[MapObject] = []
+    for template in location.objects:
+        # A clone template is a second copy of an object that is already
+        # offered, and an unloaded slot is not on screen to walk up to.
+        if template.kind != "normal" or template.local_id not in loaded:
+            continue
+        defeated = False
+        if template.trainer_type != "None":
+            try:
+                defeated = template.is_trainer_defeated
+            except (RuntimeError, ValueError):
+                continue
+        objects.append(
+            MapObject(
+                template.local_id,
+                tuple(template.local_coordinates),
+                template.script_symbol,
+                template.trainer_type,
+                defeated,
+            )
+        )
+
+    signs: list[MapSign] = []
+    for event in location.bg_events:
+        hidden_item = ""
+        symbol = ""
+        if event.kind == "Hidden Item":
+            try:
+                hidden_item = event.hidden_item.name
+            except (RuntimeError, ValueError):
+                continue
+        else:
+            symbol = event.script_symbol
+        signs.append(MapSign(tuple(event.local_coordinates), event.kind, symbol, hidden_item))
+
+    return {"exits": tuple(exits), "objects": tuple(objects), "signs": tuple(signs)}
+
+
+def _map_name(map_id: tuple[int, int], fallback: str) -> str:
+    """Name a map by its identity, not by its on-screen town name.
+
+    Emerald gives a house interior the same display name as the town around it,
+    so `map_name` alone told Jev that the staircase and the front door both led
+    to Littleroot Town.
+    """
+
+    from modules.map_data import MapRSE
+
+    try:
+        return MapRSE(map_id).name.replace("_", " ").title()
+    except ValueError:
+        return fallback
 
 
 def _move_state(move: object, *, usable: bool = True) -> MoveState:
