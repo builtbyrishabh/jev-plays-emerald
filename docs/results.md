@@ -37,9 +37,35 @@ The third timing variation naturally lost its first rival battle. The `Lost` cal
 
 Local evidence is under ignored `.cache/task4-*` directories and logs. ROMs, save states, recordings, and raw decision logs are not committed. Tracked tests skip ROM/checkpoint checks with a reason when the required local assets are unavailable.
 
+## Open-world decisions (flagged)
+
+With `JEV_OPEN_WORLD_SPIKE=1` the hardcoded route is gone: every overworld choice is enumerated from the current map's exits, people and signs, and Jev picks one. Only character creation, the clock menu and mandatory dialogue stay deterministic.
+
+Measured on 21 September 2026, three consecutive fresh New Game runs, each driven through PokéBot's own loop by a local bounded harness rather than the `__main__` launcher.
+
+| Run | Result | Jev decisions | Deterministic decisions | Model calls | Input tokens | Estimated USD |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| fix7 | Rival win, 59.5 s | 55 | 22 | 56 | 108,100 | 0.004540 |
+| fix8 | Rival win, 100.2 s | 89 | 22 | 90 | 199,605 | 0.008383 |
+| fix9 | Rival win, 116.2 s | 102 | 22 | 103 | 234,881 | 0.009865 |
+
+All three ended with a `Won` callback against the Route 103 rival trainer and a false-to-true `DEFEATED_RIVAL_ROUTE103` flag, with the starter acquired during the run. Every battle in all three runs was won, and no executor action failed. The open-world path costs roughly ten times the scripted route's model calls for the same milestone, because it decides every doorway.
+
+Before the fixes below, no flagged run had ever reached a starter. Each was found by reading the decision log of a real run:
+
+- The truck's three doors are dynamic warps, so upstream named their destination from the save block and told Jev the exit led to Petalburg City. An exit with no recorded destination now claims none.
+- The pre-clock instruction described a house while Jev was still in the moving truck.
+- A map edge targeted the middle of the neighbouring map. Route 103's middle is across water, so "travel north" out of Oldale could not be pathed at all and was suppressed as impossible. Edges now target the tile just across the border.
+- An interruption reported only "unexpected menu: script", so a cutscene and a refusal looked identical. It now names the script, which is how `NeedPokemonTrigger` became visible: Littleroot blocks the north exit until the neighbour has been met.
+- Objects the game was not tracking were dropped from the menu, so the rival - eighteen tiles from where you arrive on Route 103 - was not offered at all. Present-but-distant objects are now offered as a walk to their tile, and objects hidden by a story flag are left out.
+- Spent PP alone counted as an injury, so a full-health starter was told to heal and went hunting for a nurse it cannot walk up to.
+- The observation carried the map as a pair of numbers and no name, so Jev stood on Route 103 and walked back to Oldale to look for Route 103.
+
+Remaining: there is no planner tier. Jev still oscillates when nothing on the menu looks like progress - the winning runs each spent several decisions walking up and down the neighbour's stairs - and the only memory is the last twelve action outcomes. The menu is capped at 24 entries, ordered exits first and then by distance.
+
 ## Scope limits
 
-This is a guided opening slice ending at the first rival victory. It does not implement general exploration, gyms, catching, or a persistent model-authored plan. Each request receives the current structured game state, the mission, available actions, and up to 12 recent action outcomes. Mechanical navigation and mandatory story progression remain code-driven.
+This is an opening slice ending at the first rival victory. It does not implement gyms, catching, or a persistent model-authored plan. The default route is hardcoded; open-world enumeration is behind `JEV_OPEN_WORLD_SPIKE`. Each request receives the current structured game state, the mission, available actions, and up to 12 recent action outcomes. Mechanical navigation and mandatory story progression remain code-driven.
 
 ## Final verification
 

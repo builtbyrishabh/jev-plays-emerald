@@ -26,6 +26,10 @@ class FrameState:
     game_state: str
     menu_phase: str = "none"
     paused: bool = False
+    # The scripts Emerald is running right now, innermost last. Carried so an
+    # interruption can say which one took over: "the game started a cutscene"
+    # and "the game refused to let you leave town" look identical without it.
+    scripts: tuple[str, ...] = ()
 
 
 class FrameBoundary(Protocol):
@@ -114,7 +118,10 @@ class ActionExecutor:
                     yield self._finish(Outcome.INTERRUPTED, f"game changed to {frame_state.game_state}")
                     return
                 if frame_state.menu_phase not in plan.allowed_menu_phases:
-                    yield self._finish(Outcome.INTERRUPTED, f"unexpected menu: {frame_state.menu_phase}")
+                    script = f" ({frame_state.scripts[-1]})" if frame_state.scripts else ""
+                    yield self._finish(
+                        Outcome.INTERRUPTED, f"unexpected menu: {frame_state.menu_phase}{script}"
+                    )
                     return
                 if frames >= self._frame_limit:
                     yield self._finish(Outcome.FAILED, f"action exceeded {self._frame_limit} frames")

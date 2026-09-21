@@ -17,6 +17,9 @@ class MapPosition:
     map_id: tuple[int, int]
     coordinates: tuple[int, int]
     facing: str
+    # Where the player would say they are. Without it the only clue is a pair
+    # of numbers, and Jev walked off Route 103 looking for Route 103.
+    map_name: str = ""
 
 
 @dataclass(frozen=True)
@@ -38,13 +41,20 @@ class MapExit:
 
 @dataclass(frozen=True)
 class MapObject:
-    """A person or interactive object currently loaded on this map."""
+    """A person or interactive object that is present on this map.
+
+    `loaded` is false for one that exists but is too far away for the game to
+    be tracking it. Those are still worth offering - the Route 103 rival is
+    eighteen tiles from where you arrive - but only their spawn tile is known,
+    not where they have since walked to.
+    """
 
     local_id: int
     coordinates: tuple[int, int]
     script_symbol: str
     trainer_type: str = "None"
     trainer_defeated: bool = False
+    loaded: bool = True
 
 
 @dataclass(frozen=True)
@@ -218,10 +228,12 @@ class ObservationReader:
         if state in {GameState.OVERWORLD, GameState.CHANGE_MAP, GameState.BATTLE_STARTING, GameState.BATTLE}:
             try:
                 avatar = get_player_avatar()
+                map_id = tuple(avatar.map_group_and_number)
                 position = MapPosition(
-                    tuple(avatar.map_group_and_number),
+                    map_id,
                     tuple(avatar.local_coordinates),
                     avatar.facing_direction,
+                    _map_name(map_id, ""),
                 )
             except (RuntimeError, ValueError):
                 position = None
@@ -323,6 +335,12 @@ class ObservationReader:
         )
 
 
+# Emerald marks a warp whose destination a script fills in at runtime by
+# pointing it at map 127/127. The truck's three doors are the opening's only
+# ones: the arrival cutscene decides where they lead.
+DYNAMIC_WARP = (127, 127)
+
+
 def _read_landmarks(position: MapPosition | None) -> dict[str, tuple]:
     """Read the current map's static landmarks on the emulator owner thread.
 
@@ -340,6 +358,7 @@ def _read_landmarks(position: MapPosition | None) -> dict[str, tuple]:
         return {}
 
     from modules.map import get_map_data_for_current_position, get_map_objects
+    from modules.memory import get_event_flag_by_number
 
     location = get_map_data_for_current_position()
     if location is None:
@@ -348,6 +367,13 @@ def _read_landmarks(position: MapPosition | None) -> dict[str, tuple]:
     here = tuple(location.map_group_and_number)
     exits: list[MapExit] = []
     for warp in location.warps:
+        if (warp.destination_map_group, warp.destination_map_number) == DYNAMIC_WARP:
+            # Nothing on this map knows where a dynamic warp goes, and asking
+            # upstream makes it answer from the save block - which is how the
+            # truck's door announced itself as Petalburg City. Offer the way
+            # out without a destination instead of a confident wrong one.
+            exits.append(MapExit(here, tuple(warp.local_coordinates), DYNAMIC_WARP, ""))
+            continue
         try:
             destination = warp.destination_location
             key = tuple(destination.map_group_and_number)
@@ -358,19 +384,29 @@ def _read_landmarks(position: MapPosition | None) -> dict[str, tuple]:
     for connection in location.connections:
         try:
             neighbour = connection.destination_map
-            width, height = neighbour.map_size
             key = tuple(neighbour.map_group_and_number)
             name = _map_name(key, neighbour.map_name)
+            target = _border_tile(
+                connection.direction, connection.offset, location.map_size, neighbour.map_size
+            )
         except (RuntimeError, ValueError, IndexError):
             continue
-        exits.append(MapExit(key, (width // 2, height // 2), key, name, connection.direction))
+        if target is None:
+            continue
+        exits.append(MapExit(key, target, key, name, connection.direction))
 
     loaded = {npc.local_id for npc in get_map_objects()}
     objects: list[MapObject] = []
     for template in location.objects:
-        # A clone template is a second copy of an object that is already
-        # offered, and an unloaded slot is not on screen to walk up to.
-        if template.kind != "normal" or template.local_id not in loaded:
+        # A clone template is a second copy of an object that is already offered.
+        if template.kind != "normal":
+            continue
+        try:
+            # Emerald removes an object while its hide flag is set: the rival is
+            # not on Route 103 until the story puts him there.
+            if template.flag_id and get_event_flag_by_number(template.flag_id):
+                continue
+        except (RuntimeError, ValueError):
             continue
         defeated = False
         if template.trainer_type != "None":
@@ -385,6 +421,7 @@ def _read_landmarks(position: MapPosition | None) -> dict[str, tuple]:
                 template.script_symbol,
                 template.trainer_type,
                 defeated,
+                template.local_id in loaded,
             )
         )
 
@@ -402,6 +439,34 @@ def _read_landmarks(position: MapPosition | None) -> dict[str, tuple]:
         signs.append(MapSign(tuple(event.local_coordinates), event.kind, symbol, hidden_item))
 
     return {"exits": tuple(exits), "objects": tuple(objects), "signs": tuple(signs)}
+
+
+def _border_tile(
+    direction: str,
+    offset: int,
+    here_size: tuple[int, int],
+    there_size: tuple[int, int],
+) -> tuple[int, int] | None:
+    """The tile just across a map edge, in the middle of the shared border.
+
+    Aiming at the middle of the neighbour instead looks equivalent and is not:
+    Route 103's middle is across water, so "travel north" out of Oldale could
+    not be pathed at all and was dropped from the menu as impossible. The
+    crossing is what the choice actually means, and it is always walkable.
+
+    Dive and Emerge connections are not edges you can walk over, so they are
+    not offered at all.
+    """
+
+    here_width, here_height = here_size
+    width, height = there_size
+    if direction in {"North", "South"}:
+        shared = (max(0, offset) + min(here_width, offset + width)) // 2 - offset
+        return shared, (height - 1 if direction == "North" else 0)
+    if direction in {"East", "West"}:
+        shared = (max(0, offset) + min(here_height, offset + height)) // 2 - offset
+        return (width - 1 if direction == "West" else 0), shared
+    return None
 
 
 def _map_name(map_id: tuple[int, int], fallback: str) -> str:

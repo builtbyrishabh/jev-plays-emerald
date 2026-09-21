@@ -47,6 +47,15 @@ def test_injured_overworld_offers_heal_and_rival_goal():
     assert {a.id for a in actions} == {'heal:oldale','goal:rival'}
 
 
+def test_spent_pp_alone_is_not_an_injury():
+    """A full-health starter after one battle does not need a Pokemon Center."""
+    from jev_plays_emerald.opening import party_needs_healing
+    used=PartyMember('Torchic',5,20,20,'Healthy',(MoveState('Scratch',32,35),))
+    empty=PartyMember('Torchic',5,20,20,'Healthy',(MoveState('Scratch',0,35),))
+    assert not party_needs_healing((used,))
+    assert party_needs_healing((empty,))
+
+
 def test_dialogue_declines_nickname_but_accepts_mandatory_rival_visit():
     from jev_plays_emerald.opening import dialogue_button
     assert dialogue_button(('LittlerootTown_ProfessorBirchsLab_EventScript_DeclineSeeingRival', 'Std_MsgboxYesNo')) == 'A'

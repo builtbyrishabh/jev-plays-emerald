@@ -8,8 +8,14 @@ sys.path.insert(0, str(Path(__file__).parents[1] / ".cache/pokebot-gen3"))
 import pytest
 
 from jev_plays_emerald.actions import ACTION_EXECUTORS
-from jev_plays_emerald.opening import OLDALE_HEAL_MAPS, legal_actions, open_world_actions
+from jev_plays_emerald.opening import (
+    MAX_OPEN_WORLD_ACTIONS,
+    OLDALE_HEAL_MAPS,
+    legal_actions,
+    open_world_actions,
+)
 from jev_plays_emerald.state import (
+    DYNAMIC_WARP,
     MapExit,
     MapObject,
     MapPosition,
@@ -90,6 +96,35 @@ def test_a_doorway_is_walked_to_on_the_map_you_are_standing_on():
     offered = {a.id: a.label for a in open_world_actions(observation(exits=(door, edge)))}
     assert "Go through the doorway at (5, 3) into Oldale Town" == offered["walk:0:10:5:3"]
     assert "Travel north out of here into Route103" == offered["walk:0:18:10:20"]
+
+
+def test_an_exit_with_no_known_destination_claims_none():
+    """The truck's doors are dynamic warps; a label must not invent a town."""
+
+    unknown = MapExit(HERE, (4, 1), DYNAMIC_WARP, "")
+    offered = {a.id: a.label for a in open_world_actions(observation(exits=(unknown,)))}
+    assert offered["walk:0:10:4:1"] == "Go through the doorway at (4, 1) to leave this map"
+
+
+def test_a_crowded_map_keeps_its_exits_and_its_nearest_landmarks():
+    """Ordering by ID alone cut `walk:` first and left Jev nowhere to go."""
+
+    signs = tuple(MapSign((x, 1), "Script", "Town_EventScript_Sign") for x in range(40))
+    offered = [a.id for a in open_world_actions(observation(signs=signs))]
+    assert len(offered) == MAX_OPEN_WORLD_ACTIONS
+    assert {"walk:0:10:5:3", "walk:0:10:12:8"} <= set(offered)
+    # The player stands at (10, 4), so (10, 1) survives and (39, 1) does not.
+    assert "interact:10:1" in offered
+    assert "interact:39:1" not in offered
+
+
+def test_a_distant_person_is_reached_by_walking_to_their_tile():
+    """The rival is eighteen tiles away and the game is not tracking him."""
+
+    rival = MapObject(2, (10, 3), "Route103_EventScript_Rival", loaded=False)
+    offered = {a.id: a.label for a in open_world_actions(observation(objects=(rival,)))}
+    assert offered["interact:10:3"] == "Walk all the way over to Rival at (10, 3)"
+    assert "talk:2" not in offered
 
 
 def test_identical_destinations_are_offered_once():
@@ -223,6 +258,14 @@ class FakeWarp:
     destination_id: tuple[int, int] = (0, 9)
 
     @property
+    def destination_map_group(self):
+        return self.destination_id[0]
+
+    @property
+    def destination_map_number(self):
+        return self.destination_id[1]
+
+    @property
     def destination_location(self):
         return type(
             "Destination",
@@ -236,6 +279,7 @@ class FakeConnection:
     direction: str
     destination_id: tuple[int, int]
     size: tuple[int, int] = (20, 30)
+    offset: int = 0
 
     @property
     def destination_map(self):
@@ -258,6 +302,7 @@ class FakeTemplate:
     trainer_type: str = "None"
     script_symbol: str = "LittlerootTown_EventScript_Mom"
     is_trainer_defeated: bool = False
+    flag_id: int = 0
 
 
 @dataclass
@@ -270,6 +315,7 @@ class FakeBgEvent:
 class FakeLocation:
     map_group_and_number = HERE
     map_name = "Oldale Town"
+    map_size = (20, 20)
 
     def __init__(self, warps=(), objects=(), bg_events=(), connections=()):
         self.warps = list(warps)
@@ -278,16 +324,22 @@ class FakeLocation:
         self.connections = list(connections)
 
 
-def install(monkeypatch, location, loaded_ids=()):
+def install(monkeypatch, location, loaded_ids=(), hidden_flags=()):
     from modules import map as map_module
+    from modules import memory as memory_module
 
     loaded = [type("Obj", (), {"local_id": i})() for i in loaded_ids]
     monkeypatch.setattr(map_module, "get_map_data_for_current_position", lambda: location, raising=False)
     monkeypatch.setattr(map_module, "get_map_objects", lambda: loaded, raising=False)
+    monkeypatch.setattr(
+        memory_module, "get_event_flag_by_number", lambda flag: flag in hidden_flags, raising=False
+    )
     return _read_landmarks(MapPosition(HERE, (10, 4), "Up"))
 
 
-def test_reader_skips_clone_and_unloaded_objects(monkeypatch):
+def test_reader_skips_clones_and_marks_distant_objects_unloaded(monkeypatch):
+    """A far-off object still exists; only its live position is unknown."""
+
     location = FakeLocation(
         objects=[
             FakeTemplate(local_id=1, local_coordinates=(7, 7)),
@@ -296,7 +348,15 @@ def test_reader_skips_clone_and_unloaded_objects(monkeypatch):
         ]
     )
     landmarks = install(monkeypatch, location, loaded_ids=(1, 3))
-    assert [npc.local_id for npc in landmarks["objects"]] == [1]
+    assert [(npc.local_id, npc.loaded) for npc in landmarks["objects"]] == [(1, True), (2, False)]
+
+
+def test_reader_skips_an_object_the_story_has_hidden(monkeypatch):
+    """The Route 103 rival is in the map data long before he is there."""
+
+    location = FakeLocation(objects=[FakeTemplate(local_id=2, local_coordinates=(10, 3), flag_id=723)])
+    assert install(monkeypatch, location, hidden_flags=(723,))["objects"] == ()
+    assert len(install(monkeypatch, location)["objects"]) == 1
 
 
 def test_reader_names_a_destination_by_map_identity(monkeypatch):
@@ -307,14 +367,28 @@ def test_reader_names_a_destination_by_map_identity(monkeypatch):
     assert landmarks["exits"][0].destination_name == "Route103"
 
 
-def test_reader_targets_the_middle_of_a_connected_map(monkeypatch):
-    """A map edge is crossed by walking to a tile on the neighbour, not here."""
+def test_reader_refuses_to_name_a_dynamic_warp(monkeypatch):
+    """Upstream answers from the save block, which is not where the door goes."""
 
-    location = FakeLocation(connections=[FakeConnection("north", ROUTE103, size=(20, 30))])
+    location = FakeLocation(warps=[FakeWarp((4, 1), "PETALBURG CITY", destination_id=DYNAMIC_WARP)])
+    exit_ = install(monkeypatch, location)["exits"][0]
+    assert exit_.destination_name == ""
+    assert exit_.target_coordinates == (4, 1)
+
+
+def test_reader_targets_the_tile_just_across_a_map_edge(monkeypatch):
+    """Oldale's middle-of-Route-103 target was across water and unpathable."""
+
+    location = FakeLocation(connections=[FakeConnection("North", ROUTE103, size=(20, 30))])
     exit_ = install(monkeypatch, location)["exits"][0]
     assert exit_.target_map == ROUTE103
-    assert exit_.target_coordinates == (10, 15)
-    assert exit_.direction == "north"
+    assert exit_.target_coordinates == (10, 29)
+    assert exit_.direction == "North"
+
+
+def test_reader_skips_a_connection_you_cannot_walk_over(monkeypatch):
+    location = FakeLocation(connections=[FakeConnection("Dive", ROUTE103)])
+    assert install(monkeypatch, location)["exits"] == ()
 
 
 def test_reader_carries_a_hidden_item_by_name(monkeypatch):
@@ -344,3 +418,55 @@ def test_the_scripted_route_pays_nothing_for_landmarks(monkeypatch):
 
     monkeypatch.setenv("JEV_OPEN_WORLD_SPIKE", "1")
     assert JevEmeraldMode()._observation_reader.landmarks is True
+
+
+def test_the_truck_hint_does_not_talk_about_the_house():
+    """Before the clock, Jev is in a truck, not in the bedroom it was sent to."""
+
+    from modules.map_data import MapRSE
+
+    from jev_plays_emerald.opening import decision_instructions
+
+    truck = observation(
+        position=MapPosition(MapRSE.INSIDE_OF_TRUCK.value, (1, 1), "Up"),
+        party=(),
+        opening_flags=OpeningFlags(False, False, False),
+    )
+    hint = decision_instructions(truck)
+    assert "moving truck" in hint
+    assert "bedroom" not in hint
+
+    house = replace(truck, position=MapPosition((1, 0), (8, 7), "Up"))
+    assert "wall clock" in decision_instructions(house)
+
+
+def test_the_hint_stops_routing_you_once_you_have_arrived():
+    """Standing on Route 103, "pass through Oldale" sent Jev back south."""
+
+    from modules.map_data import MapRSE
+
+    from jev_plays_emerald.opening import decision_instructions
+
+    arrived = observation(
+        position=MapPosition(MapRSE.ROUTE103.value, (10, 21), "Up", "Route103"),
+        opening_flags=OpeningFlags(True, False, False, set_wall_clock=True),
+    )
+    assert "already on Route 103" in decision_instructions(arrived)
+    on_the_way = replace(arrived, position=MapPosition(MapRSE.OLDALE_TOWN.value, (10, 10), "Up"))
+    assert "pass through Oldale Town" in decision_instructions(on_the_way)
+
+
+def test_the_hint_sends_you_to_the_neighbour_before_north():
+    """Littleroot's north tiles push you back until the neighbour is met."""
+
+    from jev_plays_emerald.opening import decision_instructions
+
+    town = observation(
+        position=MapPosition((0, 9), (10, 9), "Up"),
+        party=(),
+        opening_flags=OpeningFlags(False, False, False, set_wall_clock=True),
+    )
+    hint = decision_instructions(town)
+    assert "Go into Mays House" in hint  # the boy's neighbour, not his own home
+    assert "Go into Brendans House" in decision_instructions(replace(town, player_gender="female"))
+    assert "neighbour" not in decision_instructions(replace(town, rival_house_state=3))

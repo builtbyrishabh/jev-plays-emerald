@@ -443,7 +443,12 @@ class _ModeFrameBoundary:
         observation = self._mode.observation
         if observation is None:
             raise RuntimeError("no observation has been published")
-        return FrameState(observation.game_state, observation.menu_phase, self._mode._paused)
+        return FrameState(
+            observation.game_state,
+            observation.menu_phase,
+            self._mode._paused,
+            observation.scripts,
+        )
 
     def read_context_id(self) -> str:
         observation = self._mode.observation

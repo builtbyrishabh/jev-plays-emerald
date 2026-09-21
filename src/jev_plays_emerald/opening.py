@@ -170,8 +170,19 @@ class RivalProgress:
 
 
 def party_needs_healing(party: tuple[PartyMember, ...]) -> bool:
-    return any(member.hp < member.max_hp or member.status != "Healthy"
-               or any(move.pp < move.max_pp for move in member.moves) for member in party)
+    """Materially hurt, rather than a few PP short of full.
+
+    Every spent PP used to count, so a starter at full health was told its
+    party was hurt after one battle - and Jev went hunting for a nurse it
+    cannot walk up to instead of heading for Route 103.
+    """
+
+    return any(
+        member.hp < member.max_hp
+        or member.status != "Healthy"
+        or any(move.pp == 0 for move in member.moves)
+        for member in party
+    )
 
 
 _BASE_MISSION = (
@@ -196,6 +207,8 @@ def decision_instructions(observation: Observation) -> str:
 
 
 def _situation_hint(observation: Observation) -> str:
+    from modules.map_data import MapRSE
+
     if observation.game_state == "CHOOSE_STARTER" or observation.menu_phase == "starter":
         return (
             "This is your starter choice: Treecko (Grass), Torchic (Fire), or Mudkip (Water). "
@@ -215,6 +228,13 @@ def _situation_hint(observation: Observation) -> str:
             "Pokemon is close to fainting and you need it healthy for the rival."
         )
     flags = observation.opening_flags
+    here = observation.position.map_id if observation.position is not None else None
+    if here == MapRSE.INSIDE_OF_TRUCK.value:
+        return (
+            "You are riding in the back of the moving truck taking your family to Littleroot "
+            "Town, and it has arrived. The boxes around you are scenery. Go through the doorway "
+            "to step outside; nothing else in here advances the game."
+        )
     if not flags.set_wall_clock:
         return (
             "You just moved into your new house in Littleroot Town. The game will not let you "
@@ -222,6 +242,21 @@ def _situation_hint(observation: Observation) -> str:
             "then head back downstairs. Do not try to leave the house until the clock is set."
         )
     if not observation.party:
+        if observation.rival_house_state < 3:
+            # The town's north exit tiles run NeedPokemonTrigger and push you
+            # back until this is done, so "head north" is not yet advice. Name
+            # the houses: both are on the menu, and one of them is your own.
+            neighbour, own = (
+                ("Mays House", "Brendans House")
+                if observation.player_gender == "male"
+                else ("Brendans House", "Mays House")
+            )
+            return (
+                "You have no Pokemon yet, and Littleroot will not let you walk north out of town "
+                f"until you have introduced yourself to the new neighbour. {own} is your own "
+                f"home and has nothing left for you. Go into {neighbour}, up to the bedroom on "
+                "the second floor, and talk to the child there."
+            )
         return (
             "You have no Pokemon yet. Professor Birch is being attacked on Route 101, straight "
             "north of Littleroot Town - leave the house and head north to reach his bag."
@@ -229,14 +264,22 @@ def _situation_hint(observation: Observation) -> str:
     if not flags.rescued_birch:
         return "Finish helping Professor Birch, then follow where he leads."
     if not flags.defeated_rival_route103:
-        hint = (
-            "Head north out of Littleroot: cross Route 101, pass through Oldale Town, then go up "
-            "Route 103 to find and challenge your rival."
-        )
+        if here == MapRSE.ROUTE103.value:
+            hint = (
+                "You are already on Route 103. Your rival is north of you on this route - walk "
+                "the whole way over to him and start the battle."
+            )
+        else:
+            hint = (
+                "Head north out of Littleroot: cross Route 101, pass through Oldale Town, then "
+                "go up Route 103 to find and challenge your rival."
+            )
         if party_needs_healing(observation.party):
             hint += (
                 " Your party is hurt - healing for free at the Oldale Town Pokemon Center before "
-                "the rival fight is usually worth it."
+                "the rival fight is usually worth it. Pick the Pokemon Center action itself: it "
+                "walks in, heals and comes back out, while walking into the building yourself "
+                "heals nothing."
             )
         return hint
     return ""
@@ -350,11 +393,13 @@ def open_world_actions(observation: Observation) -> tuple[Action, ...]:
         seen_destinations.add(exit_.destination_id)
         group, number = exit_.target_map
         x, y = exit_.target_coordinates
-        label = (
-            f"Travel {exit_.direction} out of here into {exit_.destination_name}"
-            if exit_.direction
-            else f"Go through the doorway at ({x}, {y}) into {exit_.destination_name}"
-        )
+        if exit_.direction:
+            label = f"Travel {exit_.direction} out of here into {exit_.destination_name}"
+        elif exit_.destination_name:
+            label = f"Go through the doorway at ({x}, {y}) into {exit_.destination_name}"
+        else:
+            # A dynamic warp. Say only what is certain: it leaves this map.
+            label = f"Go through the doorway at ({x}, {y}) to leave this map"
         choices.append(act(f"walk:{group}:{number}:{x}:{y}", label))
 
     for npc in observation.objects:
@@ -365,7 +410,12 @@ def open_world_actions(observation: Observation) -> tuple[Action, ...]:
             label = f"Approach and talk to {who} at ({x}, {y}), a trainer you have {state}"
         else:
             label = f"Approach and talk to {who} at ({x}, {y})"
-        choices.append(act(f"talk:{npc.local_id}", label))
+        if npc.loaded:
+            choices.append(act(f"talk:{npc.local_id}", label))
+        else:
+            # Too far away for the game to track, so only the tile they stand
+            # on is known. Walking there and pressing A reaches them anyway.
+            choices.append(act(f"interact:{x}:{y}", f"Walk all the way over to {who} at ({x}, {y})"))
 
     for sign in observation.signs:
         x, y = sign.coordinates
@@ -383,8 +433,25 @@ def open_world_actions(observation: Observation) -> tuple[Action, ...]:
     # Never empty the menu: a suppressed action beats no action at all.
     choices = usable or choices
 
-    ordered = sorted(dict.fromkeys(choices), key=lambda choice: choice.id)
+    here = observation.position.coordinates if observation.position is not None else (0, 0)
+    ordered = sorted(dict.fromkeys(choices), key=lambda choice: _menu_order(choice, here))
     return tuple(ordered[:MAX_OPEN_WORLD_ACTIONS])
+
+
+# Ways off this map come first, then people, then whatever is nearest. A
+# crowded route enumerates more landmarks than the menu holds, and ordering by
+# ID alone would drop `walk:` before `interact:` - cutting the exits and
+# leaving Jev nowhere to go.
+MENU_ORDER = {"walk": 0, "heal": 1, "talk": 2, "interact": 3}
+
+
+def _menu_order(choice: Action, here: tuple[int, int]) -> tuple[int, int, str]:
+    kind, _, rest = choice.id.partition(":")
+    distance = 0
+    if kind == "interact":
+        x, y = (int(part) for part in rest.split(":"))
+        distance = abs(x - here[0]) + abs(y - here[1])
+    return MENU_ORDER.get(kind, len(MENU_ORDER)), distance, choice.id
 
 
 FUTILE_ATTEMPTS = 3

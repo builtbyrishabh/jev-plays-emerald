@@ -108,6 +108,22 @@ def test_unexpected_menu_interrupts_navigation(navigation_fixture) -> None:
     assert navigation_fixture.held_buttons == set()
 
 
+def test_an_interruption_names_the_script_that_took_over(navigation_fixture) -> None:
+    """"A cutscene played" and "the game refused" are the same line without it."""
+
+    run = navigation_fixture.begin_walk()
+    assert next(run) is None
+
+    navigation_fixture.boundary.state = FrameState(
+        "OVERWORLD", "script", scripts=("LittlerootTown_EventScript_NeedPokemonTriggerLeft",)
+    )
+
+    assert next(run) is Outcome.INTERRUPTED
+    assert navigation_fixture.executor.last_reason == (
+        "unexpected menu: script (LittlerootTown_EventScript_NeedPokemonTriggerLeft)"
+    )
+
+
 def test_navigation_replans_twice_then_fails() -> None:
     boundary = FakeFrameBoundary()
     attempts = 0
