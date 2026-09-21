@@ -48,11 +48,18 @@ class AgentStatus:
     last_battle_outcome: str | None = None
 
 
+# Anchored to the project, not to the working directory: PokéBot is launched
+# with `cwd=.cache/pokebot-gen3`, so a relative path put every real run's log
+# inside the disposable upstream checkout while the replay corpus this project
+# reads stayed empty.
+RUN_LOG = Path(__file__).resolve().parents[2] / "runs" / "decisions.jsonl"
+
+
 class DecisionTelemetry:
     """Publish immutable status and append credential-free JSONL events."""
 
-    def __init__(self, path: Path = Path("runs/decisions.jsonl")) -> None:
-        self._path = path
+    def __init__(self, path: Path | None = None) -> None:
+        self._path = RUN_LOG if path is None else path
         self._snapshot = AgentStatus()
 
     @property

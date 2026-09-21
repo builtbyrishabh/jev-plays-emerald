@@ -579,6 +579,21 @@ def test_starter_executor_allows_post_selection_transition() -> None:
     assert "UNKNOWN" in _starter_plan(action).allowed_states
 
 
+def test_the_run_log_is_anchored_to_the_project(monkeypatch):
+    """PokéBot is launched with its own working directory.
+
+    A relative default sent every real run's decisions into the disposable
+    upstream checkout, while the corpus the replay harness reads stayed empty.
+    """
+
+    monkeypatch.undo()  # the suite-wide fixture redirects this to a tmp log
+    from jev_plays_emerald import telemetry
+
+    expected = Path(__file__).resolve().parents[1] / "runs" / "decisions.jsonl"
+    assert telemetry.RUN_LOG == expected
+    assert telemetry.DecisionTelemetry()._path == expected
+
+
 def test_telemetry_status_is_immutable_and_jsonl_excludes_request_secrets(tmp_path: Path):
     from jev_plays_emerald.telemetry import DecisionTelemetry
 
