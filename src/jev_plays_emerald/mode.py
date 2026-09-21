@@ -12,8 +12,9 @@ from modules.context import context
 from modules.modes import BattleAction, BotMode
 
 from jev_plays_emerald.actions import Action, ActionExecutor, FrameState, Outcome
-from jev_plays_emerald.jev import JevChoice, JevGateway, JevGatewayError, JevTimeoutError, JsonValue
+from jev_plays_emerald.jev import JevChoice, JevGatewayError, JevTimeoutError, JsonValue
 from jev_plays_emerald.opening import RivalProgress, legal_actions, open_world_spike_enabled
+from jev_plays_emerald.service import default_choice_client
 from jev_plays_emerald.state import Observation, ObservationReader, RecentOutcome
 from jev_plays_emerald.telemetry import DecisionTelemetry
 
@@ -459,7 +460,7 @@ def _request_choice(
     options: dict[str, JsonValue | None],
     instructions: JsonValue,
 ) -> JevChoice:
-    client = JevGateway() if gateway is None else gateway
+    client = default_choice_client() if gateway is None else gateway
     return asyncio.run(
         client.choose(
             state=state,

@@ -1,0 +1,19 @@
+{
+  "name": "jev-decision-service",
+  "private": true,
+  "type": "module",
+  "description": "Jev's decision layer: the option enumerator, the planner, and the Jev client.",
+  "scripts": {
+    "start": "node src/index.ts",
+    "check": "tsc --noEmit",
+    "test": "node --test src/*.test.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/gateway": "^4.0.87",
+    "ai": "^7.0.107"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
+  }
+}

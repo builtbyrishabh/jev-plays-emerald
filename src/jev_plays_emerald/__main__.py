@@ -96,6 +96,25 @@ def verify_runtime() -> None:
         raise RuntimeError("Jev plugin is not installed; rerun `python3.13 scripts/bootstrap.py`")
 
 
+def verify_decision_service() -> None:
+    """Prove the TypeScript service starts before the emulator does.
+
+    The mode starts its own copy inside PokéBot's process, so without this a
+    missing `node` or an unbuilt `service/` would only surface at the first
+    decision, mid-run.
+    """
+
+    from jev_plays_emerald.service import DecisionService, service_enabled
+
+    if not service_enabled():
+        return
+    client = DecisionService()
+    try:
+        client.start()
+    finally:
+        client.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rom", required=True, type=Path, help="path to the user-provided Emerald ROM")
@@ -106,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
     rom = arguments.rom.expanduser().resolve()
     verify_rom(rom)
     verify_runtime()
+    verify_decision_service()
     configure_profile(rom, arguments.profile)
     if arguments.check:
         print(f"ROM verified; profile ready: {arguments.profile}")
