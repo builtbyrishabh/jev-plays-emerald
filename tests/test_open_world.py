@@ -452,6 +452,17 @@ def test_rival_mission_states_the_goal_without_an_authored_route():
     assert "travel north" not in MISSION
 
 
+def test_general_prompt_prioritizes_live_dialogue_without_naming_a_route():
+    from jev_plays_emerald.opening import decision_instructions
+
+    instructions = decision_instructions(observation())
+
+    assert "explicit directions in that dialogue as the strongest evidence" in instructions
+    assert "move there before leaving" in instructions
+    assert "May's House" not in instructions
+    assert "go upstairs" not in instructions.lower()
+
+
 def test_first_gym_prompt_focuses_jev_on_the_immediate_objective(monkeypatch):
     from jev_plays_emerald.opening import decision_instructions
 
@@ -466,7 +477,7 @@ def test_first_gym_prompt_focuses_jev_on_the_immediate_objective(monkeypatch):
     assert instructions.startswith("Goal: earn the Stone Badge.")
     assert "Build the immediate objective from the latest relevant dialogue" in instructions
     assert "immediate objective" in instructions
-    assert "Keep that objective across map changes" in instructions
+    assert "objective across map changes" in instructions
     assert "Check whether the expected progress occurred" in instructions
     assert "interact with its relevant person or object before leaving" in instructions
     assert "Choose your starter, rescue Birch" not in instructions

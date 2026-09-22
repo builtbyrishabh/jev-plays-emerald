@@ -34,8 +34,8 @@ and `JEV_PLANNER_MODEL=openai/gpt-5.6-luna`. Jev's base prompt contains no autho
 route. The planner advises after three repeats of one action or eight meaningful
 overworld decisions without story progress. Each correction contains a currently legal
 action, exact location, action to avoid, and observable success signal. Once Jev
-completes that first action, the remaining hint stays as forward-only guidance until
-the story advances. Jev still chooses every action. Advice and call count appear in
+completes that action, the hint expires and Jev decides independently until another
+stall. Jev still chooses every action. Advice and call count appear in
 the viewer.
 
 Planner hypotheses and observed outcomes persist for inspection in
@@ -54,7 +54,11 @@ state when choosing the next meaningful action.
 
 ## Scope and evidence
 
-The implementation has completed a continuous input-only New Game-to-rival run with real Jev decisions. Completion requires the actual rival battle victory and a newly set story flag. Loading a completed checkpoint does not count as a new win.
+Earlier builds completed continuous input-only New Game-to-rival runs with real
+Jev decisions. The final no-authored-route prompt has not yet reproduced that
+result within its bounded verification run. Completion still requires the actual
+rival battle victory and a newly set story flag; loading a completed checkpoint
+does not count as a new win.
 
 See [measured results](docs/results.md) for repeatability, failures, costs, and remaining limitations. A working integration does not establish that Jev outperforms deterministic rules.
 

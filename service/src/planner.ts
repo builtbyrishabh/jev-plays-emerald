@@ -8,6 +8,7 @@ Jev alone chooses from the complete current legal menu. You are called only afte
 repeated decisions without story progress. Treat liveState as authority. Use recent dialogue, recent
 outcomes, story flags, and legalActions to infer the immediate objective. Use your own Emerald knowledge
 when the observed evidence is incomplete, but treat it as a hypothesis and never contradict liveState.
+Story flags and currentObjective take precedence over dialogue from completed steps.
 Use currentObjective as the active story milestone. When rivalName is present, keep the player and rival
 identities distinct while matching that rival to the currently offered people and places. Do not substitute
 a different person for a named objective target. If the target is absent, leave the current place and keep

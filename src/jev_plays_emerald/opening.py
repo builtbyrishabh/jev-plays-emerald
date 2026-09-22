@@ -219,9 +219,11 @@ def decision_instructions(
     base = (
         current_mission()
         + " Build the immediate objective from the latest relevant dialogue and observed story state. "
-        "Keep that objective across map changes until the game shows it is complete. Use current location, "
-        "recent outcomes, and action labels to choose the action most likely to advance it. When you reach "
-        "a requested location, interact with its relevant person or object before leaving. Check whether the "
+        "Treat explicit directions in that dialogue as the strongest evidence for the next action. Keep the "
+        "objective across map changes until the game shows it is complete. Use current location, recent outcomes, "
+        "and action labels to choose the action most likely to advance it. When dialogue locates the objective "
+        "elsewhere in the current building or area, move there before leaving. At the requested location, "
+        "interact with its relevant person or object before leaving. Check whether the "
         "expected progress occurred after each action; if it did not, revise your assumption instead of "
         "repeating the same kind of choice. Do not let the long-term badge goal replace the immediate objective. "
         "Choose exactly one legal action; probabilities express preferences, not success chances."

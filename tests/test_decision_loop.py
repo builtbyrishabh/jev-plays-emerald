@@ -574,7 +574,7 @@ def test_mode_rejects_planner_destination_outside_pending_menu(mode_runtime):
         run.close()
 
 
-def test_completed_hint_action_becomes_forward_only_follow_up_guidance(
+def test_completed_hint_action_returns_control_to_jev_until_another_stall(
     mode_runtime,
 ):
     mode, reader, _, worker, _, telemetry = mode_runtime
@@ -609,17 +609,12 @@ def test_completed_hint_action_becomes_forward_only_follow_up_guidance(
         if json.loads(line)["event"] == "request"
     )
     assert request["state"]["decision_brief"]["planner_hint"] is None
-    follow_up = request["state"]["decision_brief"]["planner_follow_up"]
-    assert follow_up["hint"] == "Reconsider which recent conversation is still unfinished."
-    assert follow_up["avoid"] == "Do not repeat the blocked route."
-    assert follow_up["success_signal"] == "story progress changes"
-    assert follow_up["status"] == "first_action_completed"
+    assert "planner_follow_up" not in request["state"]["decision_brief"]
     instructions = request["questions"]["action"]["instructions"]
-    assert "Continue the remaining recovery goal" in instructions
-    assert "Avoid: Do not repeat the blocked route." in instructions
-    assert "Success looks like: story progress changes." in instructions
+    assert "Reconsider which recent conversation" not in instructions
+    assert "Do not repeat the blocked route" not in instructions
     assert "Exact location" not in instructions
-    assert mode.planner_view["phase"] == "follow_up"
+    assert mode.planner_view["advice"] is None
     assert len(worker.futures) == 1
 
 
@@ -652,7 +647,7 @@ def test_unfollowed_hint_expires_when_jev_leaves_by_another_action(mode_runtime)
         for line in telemetry._path.read_text().splitlines()
         if json.loads(line)["event"] == "request"
     )
-    assert request["state"]["decision_brief"]["planner_follow_up"] is None
+    assert "planner_follow_up" not in request["state"]["decision_brief"]
     assert mode.planner_view["advice"] is None
     assert len(worker.futures) == 1
 

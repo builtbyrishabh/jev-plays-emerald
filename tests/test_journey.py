@@ -151,20 +151,14 @@ def test_exhausted_trainer_battle_can_select_struggle():
     assert "Struggle" in actions[0].label
 
 
-def test_completed_coaching_step_does_not_remain_a_destination(tmp_path):
-    from jev_plays_emerald.jev import TokenUsage
-    from jev_plays_emerald.planner import PlannerAdvice, PlannerMemory
+def test_decision_brief_has_no_persistent_follow_up_guidance(tmp_path):
+    from jev_plays_emerald.planner import PlannerMemory
     from jev_plays_emerald.planner_memory import EvidenceLedger
 
     memory = PlannerMemory(ledger=EvidenceLedger(tmp_path / "memory.json"))
     obs = observation()
-    advice = PlannerAdvice("Return through Oldale then south to Birch", "walk:0:10:1:1", "Oldale", "Avoid detours", "Arrive Oldale", "test", TokenUsage(), 0)
-    memory.accept(obs, advice)
-    brief = memory.decision_brief(obs, (), None, advice)
-    assert "destination_action_id" not in brief["planner_follow_up"]
-    assert "location" not in brief["planner_follow_up"]
-    assert brief["planner_follow_up"]["success_signal"] == "Arrive Oldale"
-    assert brief["planner_follow_up"]["avoid"] == "Avoid detours"
+    brief = memory.decision_brief(obs, (), None)
+    assert "planner_follow_up" not in brief
     assert "remembered_plan" not in brief
 
 

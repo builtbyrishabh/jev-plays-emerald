@@ -63,8 +63,8 @@ includes CLI prompt overhead. [Configuration and verification](codex-planner.md)
 
 Python owns a 24-attempt memory and triggers planning after three repetitions or
 eight decisions without story progress. Useful map travel, party improvement,
-healing and inventory changes reset the general counter. The exact destination expires after Jev follows it, while
-the remaining guidance persists across map changes until story progress. A local
+healing and inventory changes reset the general counter. Advice expires after Jev
+completes its one immediate action; another call requires a new stall. A local
 atomic JSON ledger retains verified lessons and map-scoped dead ends for inspection;
 they are not replayed into model prompts. Python checks pause, context and story
 staleness before accepting advice; planner failures pause visibly. Planner mode

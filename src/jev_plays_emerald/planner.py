@@ -48,14 +48,6 @@ class PlannerAdvice:
             f"Avoid: {self.avoid} Success looks like: {self.success_signal}."
         )
 
-    @property
-    def follow_up_text(self) -> str:
-        return (
-            f"Continue the remaining recovery goal from the current menu: {self.hint} "
-            f"Avoid: {self.avoid} Success looks like: {self.success_signal}."
-        )
-
-
 def story_progress(observation: Observation) -> tuple:
     return (
         observation.opening_flags,
@@ -257,23 +249,12 @@ class PlannerMemory:
         observation: Observation,
         actions: tuple[Action, ...],
         advice: PlannerAdvice | None,
-        follow_up: PlannerAdvice | None = None,
     ) -> dict[str, Any]:
         return {
             "legal_actions": [
                 self._action_summary(observation, action) for action in actions
             ],
             "planner_hint": advice.guidance if advice is not None else None,
-            "planner_follow_up": (
-                {
-                    "hint": follow_up.hint,
-                    "avoid": follow_up.avoid,
-                    "success_signal": follow_up.success_signal,
-                    "status": "first_action_completed",
-                }
-                if follow_up is not None
-                else None
-            ),
         }
 
     def planner_context(
@@ -281,19 +262,22 @@ class PlannerMemory:
         observation: Observation,
         actions: tuple[Action, ...],
         advice: PlannerAdvice | None,
-        follow_up: PlannerAdvice | None = None,
     ) -> dict[str, Any]:
-        brief = self.decision_brief(observation, actions, advice, follow_up)
+        brief = self.decision_brief(observation, actions, advice)
         objective = stage_key(observation)
         context = {
             "trigger": self.reason(observation),
             "currentObjective": objective,
             "legalActions": brief["legal_actions"],
-            "previousAdvice": brief["planner_hint"] or brief["planner_follow_up"],
+            "previousAdvice": brief["planner_hint"],
         }
-        if objective == "meet_neighbor":
+        if objective in {"meet_neighbor", "reach_rival"}:
             rival_name = "May" if observation.player_gender == "male" else "Brendan"
-            context["currentObjective"] = f"meet {rival_name}, the rival"
+            context["currentObjective"] = (
+                f"meet {rival_name}, the rival"
+                if objective == "meet_neighbor"
+                else f"find and defeat {rival_name}, the rival, on Route 103"
+            )
             context["rivalName"] = rival_name
         return context
 

@@ -55,12 +55,10 @@ one currently offered action ID, exact location, an action to avoid, and an
 observable success signal. Python rejects destinations outside the current menu.
 Code does not execute model-written text or completion predicates.
 
-After Jev takes the exact first action, its old destination is marked completed
-instead of remaining a current target. The rest of the hint stays as forward-only
-guidance across map transitions until trusted story state changes. This lets a
-single intervention express “enter May's House, then go upstairs” without pulling
-Jev back to the entrance. Three new non-progress attempts are required before
-another planner call.
+After Jev takes the suggested action, the hint expires. Jev resumes independent
+decisions and Luna is called again only after a new stall. This prevents one wrong
+correction from steering several later choices. Three new non-progress attempts
+are required before another planner call.
 
 Evidence lives in versioned, atomic `runs/planner-memory.json`. Failed or
 interrupted repeated actions and followed hypotheses remain inspectable, but

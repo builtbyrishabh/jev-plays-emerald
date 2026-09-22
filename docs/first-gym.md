@@ -94,6 +94,12 @@ player's house. The reader now preserves coherent story data during map
 transitions, and milestone capture waits for a normal state and saves before
 advancing the emulator frame.
 
+On 23 September, the final no-authored-route configuration received one fresh
+120-decision rival verification run with no manual actions or runtime errors. It
+reached May's house but did not meet her, exhausted the eight-call Luna budget,
+and stopped at the decision limit. This is a failed completion attempt and shows
+that the opening is not yet reliable with the current general prompt.
+
 A separate ROM probe from run 5's checkpoint verifies Norman's relocated
 position, talking to him, Wally's battle, and returning to the gym with the
 tutorial flag set. This required 12,188 emulator frames and is a control test,
@@ -102,7 +108,7 @@ too short; the tutorial control itself did not require a change.
 
 ## Final checks and next step
 
-- Python: **323 tests and 14 ROM subtests passed**; two existing aiohttp warnings.
+- Python: **334 tests and 14 ROM subtests passed**; two existing aiohttp warnings.
 - TypeScript checking and **19 service tests passed**.
 - Desktop/mobile viewer fixtures were inspected; these are UI evidence, not a
   completed gameplay recording.

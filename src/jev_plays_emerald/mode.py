@@ -121,7 +121,6 @@ class JevEmeraldMode(BotMode):
         self._suppress_futile = self._planner is None if suppress_futile is None else suppress_futile
         self._pending_plan: _PendingPlan | None = None
         self._advice: PlannerAdvice | None = None
-        self._follow_up_advice: PlannerAdvice | None = None
         self._coaching = CoachingSession(self._telemetry)
         self._planner_reason: str | None = None
         self._action_observation: Observation | None = None
@@ -130,12 +129,12 @@ class JevEmeraldMode(BotMode):
     def planner_view(self) -> dict | None:
         if self._planner is None:
             return None
-        visible_advice = self._advice or self._follow_up_advice
+        visible_advice = self._advice
         return {
             "model": planner_model(), "calls": self._coaching.calls,
             "pending": self._pending_plan is not None, "reason": self._planner_reason,
             "advice": asdict(visible_advice) if visible_advice else None,
-            "phase": "exact_action" if self._advice else "follow_up" if self._follow_up_advice else None,
+            "phase": "exact_action" if self._advice else None,
             "budget": self._coaching.budget,
             "interventions": self._coaching.interventions,
         }
@@ -335,7 +334,13 @@ class JevEmeraldMode(BotMode):
         if self._planner is not None and observation is not None:
             if self._planner.sync_progress(observation):
                 self._advice = None
-                self._follow_up_advice = None
+            elif self._advice is not None and self._planner.advice_was_followed(
+                self._advice.destination_action_id
+            ):
+                # A correction is one action, not a route that keeps steering Jev.
+                self._planner.expire_advice()
+                self._coaching.expire("action_finished")
+                self._advice = None
         with self._state_lock:
             if (
                 self._paused
@@ -375,7 +380,7 @@ class JevEmeraldMode(BotMode):
             return
         state = model_state(observation)
         state["planner_context"] = self._planner.planner_context(
-            observation, actions, self._advice, self._follow_up_advice
+            observation, actions, self._advice
         )
         options = {action.id: action.label for action in actions}
         mission = current_mission()
@@ -427,7 +432,7 @@ class JevEmeraldMode(BotMode):
                     self._telemetry.planner_event("planner-response", **asdict(advice),
                         disposition="invalid", message=str(error), call=pending.call)
                 if not stale:
-                    if self._advice is None and self._follow_up_advice is None:
+                    if self._advice is None:
                         self._paused = True
                         self._decision_generation += 1
                         self._telemetry.error(f"Planner: {error}")
@@ -442,7 +447,6 @@ class JevEmeraldMode(BotMode):
             if not stale and self._planner is not None:
                 self._planner.accept(pending.observation, advice)
                 self._advice = advice
-                self._follow_up_advice = None
         return True
 
     def _start_model_request(
@@ -463,10 +467,10 @@ class JevEmeraldMode(BotMode):
             )
         ):
             if self._planner.advice_was_followed(self._advice.destination_action_id):
-                self._follow_up_advice = self._advice
+                self._coaching.expire("action_finished")
             else:
-                self._planner.expire_advice()
                 self._coaching.expire()
+            self._planner.expire_advice()
             self._advice = None
         state = model_state(observation)
         state["observation_note"] = (
@@ -475,7 +479,7 @@ class JevEmeraldMode(BotMode):
         )
         if self._planner is not None:
             state["decision_brief"] = self._planner.decision_brief(
-                observation, actions, self._advice, self._follow_up_advice
+                observation, actions, self._advice
             )
         options: dict[str, JsonValue | None] = {
             action.id: action.label for action in actions
@@ -485,8 +489,6 @@ class JevEmeraldMode(BotMode):
             advice=(
                 self._advice.text
                 if self._advice is not None
-                else self._follow_up_advice.follow_up_text
-                if self._follow_up_advice is not None
                 else None
             ),
         )

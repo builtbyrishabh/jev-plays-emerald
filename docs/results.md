@@ -3,13 +3,22 @@
 ## First-gym extension — 22 September 2026
 
 The application now targets Roxanne's Stone Badge and exposes a local Pokémon
-reference, preparation controls, milestone coaching, and a progress viewer.
+reference, preparation controls, stall-driven coaching, and a progress viewer.
 **No autonomous first badge has been demonstrated.** The furthest fresh
 development run reached Petalburg and healed there after beating the rival and
 route trainers. A separate ROM control probe completed Norman and Wally's
 tutorial. Live testing was stopped at the user's request; see
 [first-gym evidence and remaining scope](first-gym.md) for failed runs, fixes,
-and final validation (323 Python tests, 14 ROM subtests, 19 service tests).
+and final validation (334 Python tests, 14 ROM subtests, 19 service tests).
+
+## Final no-authored-route check — 23 September 2026
+
+One fresh current-source rival run used no manual actions and encountered no
+runtime error, but stopped at the 120-decision limit after exhausting eight Luna
+calls. It reached May's house without meeting her. The trace led to two general
+changes: coaching advice now expires after its immediate action, and explicit
+live dialogue takes priority over the distant mission. The final rerun still did
+not complete, so current opening reliability remains unproven.
 
 ## Latest repeated suite — 22 September 2026
 
@@ -252,10 +261,13 @@ accepted decisions. One additional request has no recorded response, so its
 usage and possible charge are unknown. Luna's totals include its stale response.
 
 The key recovery crossed several maps: Luna first named the lab doorway, Jev took
-it, then the remaining guidance stayed visible long enough for Jev to choose May's
-House. A later stuck-only call selected the upstairs action at `(2, 2)`, after
+it, and the earlier implementation kept that guidance visible long enough for Jev
+to choose May's House. A later stuck-only call selected the upstairs action at `(2, 2)`, after
 which Jev met May and advanced the story. The doorway executor also stopped
 reporting false success when Jev began on a landing warp.
+
+Later validation showed that persistent guidance could also amplify a wrong hint,
+so current coaching expires after its one immediate action.
 
 Jev reached the optional rival battle without another navigation blocker but lost
 with the opposing Torchic at 3 HP. This satisfies the requested starter/rescue

@@ -164,15 +164,7 @@ def test_brief_exposes_lunas_grounded_recovery_hint_to_jev(tmp_path):
     ).decision_brief(observation((0, 9)), (action,), planner_advice)
 
     assert brief["planner_hint"] == planner_advice.guidance
-    follow_up = PlannerMemory(
-        ledger=EvidenceLedger(tmp_path / "follow-up.json")
-    ).decision_brief(observation((0, 9)), (action,), None, planner_advice)
-    assert follow_up["planner_follow_up"] == {
-        "hint": planner_advice.hint,
-        "avoid": planner_advice.avoid,
-        "success_signal": planner_advice.success_signal,
-        "status": "first_action_completed",
-    }
+    assert "planner_follow_up" not in brief
     assert "Exact location: May's House entrance at (14, 8)" in planner_advice.text
     assert "Avoid: Do not retry Route 101" in planner_advice.text
     assert "Success looks like: rival_house_state changes" in planner_advice.text
@@ -244,6 +236,16 @@ def test_luna_context_tracks_the_other_rival_identity(tmp_path):
 
     assert context["currentObjective"] == "meet Brendan, the rival"
     assert context["rivalName"] == "Brendan"
+
+
+def test_luna_context_names_the_route_103_rival_after_the_rescue(tmp_path):
+    member = PartyMember("Treecko", 5, 20, 20, "Healthy", ())
+    context = PlannerMemory(
+        ledger=EvidenceLedger(tmp_path / "memory.json")
+    ).planner_context(observation(party=(member,)), (), None)
+
+    assert context["currentObjective"] == "find and defeat May, the rival, on Route 103"
+    assert context["rivalName"] == "May"
 
 
 def test_brief_does_not_replay_cross_run_dead_ends(tmp_path):
