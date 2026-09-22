@@ -24,10 +24,11 @@ Open **<http://127.0.0.1:8888/jev/index.html>** for gameplay, decisions, probabi
 Existing profiles and saves are preserved. Use `--profile new-run-name` for a separate fresh run. See [setup](docs/setup.md) for dependencies and checkpoint handling, and [viewer details](docs/viewer.md) for controls.
 
 For experimental LLM planning, run `pnpm --dir service install`, then prefix the
-launch command with `JEV_PLANNER_MODEL=openai/gpt-5.6-luna`. The planner replaces
-authored route hints with an objective and intervenes after three repeated
-overworld attempts without story progress. Jev still chooses the actions.
-Advice and call count appear in the viewer. See [planner behavior and limits](docs/planner-proposal.md).
+launch command with `JEV_PLANNER_MODEL=openai/gpt-5.6-luna`. This disables authored
+route hints. The planner stays silent until three repeated overworld attempts
+without story progress, then supplies one short correction until the story advances.
+Jev still chooses every action. Advice and call count appear in the viewer. See
+[planner behavior and limits](docs/planner-proposal.md).
 
 Jev confirms the requested player name **Jev** through its decision API. The
 keyboard routine enters that exact capitalization; the name is user-specified,

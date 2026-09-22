@@ -326,6 +326,8 @@ class JevEmeraldMode(BotMode):
                 self._telemetry.pause()
             return
         if not naming and self._planner is not None and self._latest_observation is not None:
+            if self._planner.sync_progress(self._latest_observation):
+                self._advice = None
             reason = self._planner.reason(self._latest_observation)
             if reason is not None:
                 self._start_plan_request(actions, reason)
@@ -376,9 +378,13 @@ class JevEmeraldMode(BotMode):
                 self._telemetry.planner_event("planner-error", message=str(error), stale=stale,
                                               call=self._planner_calls)
                 if not stale:
-                    self._paused = True
-                    self._decision_generation += 1
-                    self._telemetry.error(f"Planner: {error}")
+                    if self._advice is None:
+                        self._paused = True
+                        self._decision_generation += 1
+                        self._telemetry.error(f"Planner: {error}")
+                    elif self._planner is not None and current is not None:
+                        # A failed refinement must not discard already-valid guidance.
+                        self._planner.accept(current)
                 return True
             self._telemetry.planner_event("planner-response", **asdict(advice),
                                           disposition="stale" if stale else "accepted",
@@ -408,7 +414,7 @@ class JevEmeraldMode(BotMode):
         }
         instructions = decision_instructions(
             observation, advice=self._advice.text if self._advice is not None else None,
-            authored_hints=authored_hints_enabled(),
+            authored_hints=self._planner is None and authored_hints_enabled(),
         )
         with self._state_lock:
             if (

@@ -19,8 +19,8 @@ def record(memory, before, after=None, action_id="walk:1:3:1:1", outcome=Outcome
 def test_three_repeated_attempts_request_one_correction_and_reset():
     obs = observation()
     memory = PlannerMemory()
-    assert memory.reason(obs) == "initial objective"
-    memory.accept(obs)
+    assert memory.sync_progress(obs) is False
+    assert memory.reason(obs) is None
     for _ in range(2):
         record(memory, obs, outcome=Outcome.INTERRUPTED)
         assert memory.reason(obs) is None
@@ -34,7 +34,7 @@ def test_three_repeated_attempts_request_one_correction_and_reset():
 def test_successful_stairs_can_loop_but_ids_on_other_maps_do_not_collide():
     memory = PlannerMemory()
     upstairs, downstairs = observation(), observation((1, 2))
-    memory.accept(upstairs)
+    memory.sync_progress(upstairs)
     for _ in range(2):
         record(memory, upstairs, downstairs, "talk:1")
         record(memory, downstairs, upstairs, "talk:1")
@@ -43,22 +43,21 @@ def test_successful_stairs_can_loop_but_ids_on_other_maps_do_not_collide():
     assert memory.reason(downstairs) is not None
 
 
-def test_story_progress_refreshes_the_plan_and_forgets_old_repetition():
+def test_story_progress_silently_forgets_old_repetition():
     memory = PlannerMemory()
     before = observation()
-    memory.accept(before)
+    memory.sync_progress(before)
     for _ in range(3):
         record(memory, before)
     after = observation(rival_house_state=3)
-    assert memory.reason(after) == "story progress changed"
-    memory.accept(after)
+    assert memory.sync_progress(after) is True
     assert memory.reason(after) is None
 
 
 def test_battle_and_forced_dialogue_never_trigger_repetition():
     memory = PlannerMemory()
     obs = observation()
-    memory.accept(obs)
+    memory.sync_progress(obs)
     for _ in range(5):
         record(memory, replace(obs, game_state="BATTLE"), action_id="battle-move:0")
         record(memory, obs, action_id="dialogue:advance")

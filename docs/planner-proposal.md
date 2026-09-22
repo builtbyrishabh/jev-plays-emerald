@@ -15,12 +15,13 @@ the existing TypeScript service. Both models use `AI_GATEWAY_API_KEY`.
 
 ## Smallest useful experiment
 
-Keep the legal action menu and executors. Replace situational route hints in an
-explicit experimental mode with a short objective written by an LLM. Ask the
-planner before the first Jev decision, when observed story progress changes,
-and after three repeated overworld attempts without story progress. Jev continues to select every non-forced action,
-including the starter, navigation and combat. The planner cannot press buttons,
-remove legal alternatives, or supply Jev's probability distribution.
+Keep the legal action menu and executors. Disable situational route hints in an
+explicit experimental mode and let Jev reason from game dialogue. Ask the
+planner only after three repeated overworld attempts without story progress.
+Its correction remains in context until the story advances. Jev continues to
+select every non-forced action, including the starter, navigation and combat.
+The planner cannot press buttons, remove legal alternatives, or supply Jev's
+probability distribution.
 
 Use the existing TypeScript decision service and AI Gateway for the planner
 request. Run it on the model worker, never on the emulator frame thread. Keep
@@ -46,11 +47,12 @@ not repeatedly charge for the same history window.
 
 The planner receives the current objective, map and position, available action
 labels, before/after state summaries, refusal reasons and a short memory of
-the last correction. It returns plain-text advice describing an objective, a
-brief rationale and what progress would look like. Code does not execute that
-text or evaluate model-written completion predicates. It refreshes advice on
-the observed story changes listed above, or the repetition trigger. Advice
-persists across map changes, with Jev instructed to skip completed steps.
+the last correction. It returns at most 40 words: one recovery nudge explaining
+what failed and the next useful milestone or constraint. Code does not execute
+that text or evaluate model-written completion predicates. Story progress clears
+stuck evidence and active advice without calling the planner. Advice remains in
+Jev's context across map transitions until that progress occurs; three new
+non-progress attempts are required before another call.
 
 Planner mode disables the old repetition-based action suppression: Jev keeps
 the same mechanically enumerated menu (still capped at 24 entries). The planner

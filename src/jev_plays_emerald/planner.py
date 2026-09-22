@@ -43,13 +43,22 @@ class PlannerMemory:
         self._planned_progress: tuple | None = None
 
     def reason(self, observation: Observation) -> str | None:
-        if self._planned_progress is None:
-            return "initial objective"
-        if self._planned_progress != story_progress(observation):
-            return "story progress changed"
         if any(count >= 3 for count in Counter(self._attempts).values()):
             return "three repeated attempts without story progress"
         return None
+
+    def sync_progress(self, observation: Observation) -> bool:
+        """Reset stuck evidence when the story advances, without requesting advice."""
+
+        progress = story_progress(observation)
+        if self._planned_progress is None:
+            self._planned_progress = progress
+            return False
+        if self._planned_progress == progress:
+            return False
+        self._planned_progress = progress
+        self._attempts.clear()
+        return True
 
     def accept(self, observation: Observation) -> None:
         self._planned_progress = story_progress(observation)

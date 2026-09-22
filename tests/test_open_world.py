@@ -444,6 +444,13 @@ def test_authored_hints_can_be_disabled_for_dialogue_only_play():
     assert "wall clock" not in instructions
 
 
+def test_general_mission_puts_the_starter_inside_birchs_rescue():
+    from jev_plays_emerald.opening import MISSION
+
+    assert "find and rescue Professor Birch, choosing a starter" in MISSION
+    assert "get a starter Pokemon, rescue Professor Birch" not in MISSION
+
+
 def test_the_hint_stops_routing_you_once_you_have_arrived():
     """Standing on Route 103, "pass through Oldale" sent Jev back south."""
 

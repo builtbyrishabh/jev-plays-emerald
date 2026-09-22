@@ -15,6 +15,7 @@ from jev_plays_emerald.jev import (
     JevTimeoutError,
     TokenUsage,
 )
+from jev_plays_emerald.planner import PlannerAdvice, PlannerMemory
 from jev_plays_emerald.state import (
     ActiveBattler,
     MapPosition,
@@ -140,6 +141,21 @@ def _choice(action_id: str) -> JevChoice:
     )
 
 
+def _stuck_planner(observation: Observation) -> PlannerMemory:
+    memory = PlannerMemory()
+    memory.sync_progress(observation)
+    overworld = replace(
+        observation,
+        game_state="OVERWORLD",
+        menu_phase="none",
+        position=MapPosition((1, 4), (8, 9), "Up", "Birch's Lab"),
+    )
+    action = Action("walk:1:4:6:12", "Leave Birch's Lab", observation.context_id)
+    for _ in range(3):
+        memory.record(overworld, overworld, action, Outcome.SUCCESS, None)
+    return memory
+
+
 @pytest.fixture
 def mode_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     sys.path.insert(0, str(POKEBOT_ROOT))
@@ -262,10 +278,8 @@ def test_requested_name_is_confirmed_by_jev_without_a_planner_call(mode_runtime)
 
 
 def test_planner_advice_replaces_hints_and_jev_keeps_all_choices(mode_runtime):
-    from jev_plays_emerald.planner import PlannerAdvice, PlannerMemory
-
-    mode, _, actions, worker, emulator, telemetry = mode_runtime
-    mode._planner = PlannerMemory()
+    mode, reader, actions, worker, emulator, telemetry = mode_runtime
+    mode._planner = _stuck_planner(reader.observation)
     run = mode.run()
     try:
         next(run)
@@ -286,17 +300,54 @@ def test_planner_advice_replaces_hints_and_jev_keeps_all_choices(mode_runtime):
         next(run)
         assert actions.executed[0].id == "starter:mudkip"
         assert mode.planner_view["calls"] == 1
+        assert mode.planner_view["advice"] == "Pick the companion you prefer."
+    finally:
+        run.close()
+
+
+def test_minimal_planner_mode_starts_with_dialogue_and_no_authored_hint(mode_runtime):
+    mode, reader, _, _, _, telemetry = mode_runtime
+    mode._planner = PlannerMemory()
+
+    run = mode.run()
+    try:
+        next(run)
+        request = next(
+            event for event in map(json.loads, telemetry._path.read_text().splitlines())
+            if event["event"] == "request"
+        )
+        instructions = request["questions"]["action"]["instructions"]
+        assert instructions.startswith("You are playing Pokemon Emerald")
+        assert "This is your starter choice" not in instructions
+        assert mode.planner_view["calls"] == 0
+    finally:
+        run.close()
+
+
+def test_story_progress_discards_active_advice_without_calling_planner(mode_runtime):
+    mode, reader, _, _, _, telemetry = mode_runtime
+    mode._planner = PlannerMemory()
+    mode._planner.sync_progress(reader.observation)
+    mode._advice = PlannerAdvice("Old recovery hint.", "test", TokenUsage(), 1)
+    reader.observation = replace(reader.observation, rival_house_state=3)
+
+    run = mode.run()
+    try:
+        next(run)
+        request = next(
+            event for event in map(json.loads, telemetry._path.read_text().splitlines())
+            if event["event"] == "request"
+        )
+        assert "Old recovery hint" not in request["questions"]["action"]["instructions"]
+        assert mode.planner_view["calls"] == 0
     finally:
         run.close()
 
 
 @pytest.mark.parametrize("invalidate", ["pause", "story"])
 def test_late_planner_advice_cannot_survive_pause_or_story_change(mode_runtime, invalidate):
-    from dataclasses import replace
-    from jev_plays_emerald.planner import PlannerAdvice, PlannerMemory
-
     mode, reader, actions, worker, _, telemetry = mode_runtime
-    mode._planner = PlannerMemory()
+    mode._planner = _stuck_planner(reader.observation)
     run = mode.run()
     try:
         next(run)
@@ -316,10 +367,8 @@ def test_late_planner_advice_cannot_survive_pause_or_story_change(mode_runtime, 
 
 
 def test_planner_failure_pauses_without_a_silent_hint_fallback(mode_runtime):
-    from jev_plays_emerald.planner import PlannerMemory
-
-    mode, _, actions, worker, _, telemetry = mode_runtime
-    mode._planner = PlannerMemory()
+    mode, reader, actions, worker, _, telemetry = mode_runtime
+    mode._planner = _stuck_planner(reader.observation)
     run = mode.run()
     try:
         next(run)
@@ -329,6 +378,27 @@ def test_planner_failure_pauses_without_a_silent_hint_fallback(mode_runtime):
         assert telemetry.snapshot.last_error == "Planner: deadline"
         assert actions.executed == []
         assert mode.planner_view["advice"] is None
+    finally:
+        run.close()
+
+
+def test_failed_planner_refresh_keeps_existing_advice_and_play_continues(mode_runtime):
+    mode, reader, actions, worker, _, telemetry = mode_runtime
+    mode._planner = _stuck_planner(reader.observation)
+    mode._advice = PlannerAdvice("Keep leaving the lab.", "test", TokenUsage(), 1)
+    run = mode.run()
+    try:
+        next(run)
+        worker.futures[0].set_exception(JevTimeoutError("deadline"))
+        next(run)
+
+        assert not mode.paused
+        assert mode.planner_view["advice"] == "Keep leaving the lab."
+        assert telemetry.snapshot.last_error is None
+
+        next(run)
+        assert len(worker.futures) == 2
+        assert actions.executed == []
     finally:
         run.close()
 

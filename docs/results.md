@@ -158,8 +158,37 @@ It paused at May's house when the AI SDK rejected a Jev choice that was not a
 highest-probability option. Resume requested a fresh decision; that intervention
 is viewer testing, not part of the uninterrupted completion evidence above.
 
-Final checks: 172 Python tests plus 7 ROM subtests, TypeScript typecheck, and
-all 10 service tests pass. Two existing aiohttp test-helper warnings remain.
+Final checks: 180 Python tests plus 7 ROM subtests, TypeScript typecheck, and
+all 12 service tests pass. Two existing aiohttp test-helper warnings remain.
+
+## Minimal Luna intervention — 22 September 2026
+
+A fresh `minimal-luna-final-20260922` run used no authored situation hints.
+Luna stayed silent through naming, the moving truck, the clock and the TV scene.
+It was called only after three repeated overworld attempts without story
+progress, and its accepted advice remained in Jev's context until a story flag
+or party change cleared it.
+
+Jev obtained Treecko and rescued Birch after 60 decisions: 36 Jev choices and
+24 deterministic setup/dialogue actions. Luna made three calls, using 11,824
+input and 695 output tokens. The three interventions redirected repeated aide
+talks toward Route 101, explained that the blocked north exit required meeting
+the rival at home, and redirected a later return to the lab back toward the
+rescue. Jev selected the name `Jev`, the starter and every game action itself.
+
+The run continued unaided to Route 103, reaching 49 Jev choices and 25
+deterministic actions without another Luna call. Treecko then lost a wild battle,
+and the emulator remained in a post-loss battle state with no legal action.
+The run was paused there. This proves the requested starter/rescue milestone and
+the sparse planner handoff, but not rival completion; the remaining stop is in
+battle recovery rather than planner navigation.
+
+Two discarded development runs exposed useful guardrails. A wrong mission order
+(`get a starter` before `rescue Birch`) caused Luna to invent a lab-machine path;
+the general mission now describes choosing a starter during the rescue. A later
+planner refinement exhausted Luna's hidden-reasoning budget without visible
+text; refinements now have sufficient headroom, and a failed refresh retains
+valid existing advice instead of pausing play.
 
 ## Scope limits
 

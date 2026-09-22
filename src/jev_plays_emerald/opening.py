@@ -182,8 +182,9 @@ def party_needs_healing(party: tuple[PartyMember, ...]) -> bool:
 
 
 MISSION = (
-    "You are playing Pokemon Emerald. Your mission, in order: get a starter Pokemon, "
-    "rescue Professor Birch, then travel north and beat your rival on Route 103."
+    "You are playing Pokemon Emerald. Your mission, in order: find and rescue "
+    "Professor Birch, choosing a starter when the rescue encounter prompts you, "
+    "then travel north and beat your rival on Route 103."
 )
 _BASE_MISSION = MISSION + (
     " "

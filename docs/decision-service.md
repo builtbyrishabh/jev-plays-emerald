@@ -52,12 +52,13 @@ while a request is pending, inputs stay neutral and the viewer stays responsive.
 ## The planner
 
 `service/src/planner.ts` uses `generateText` and the configured Gateway model to
-write a short objective. Python owns a 24-attempt memory, triggers planning at
-the first choice, story changes or three repetitions, and checks pause and
-context staleness before accepting advice. A planner failure pauses visibly.
-Jev then receives the base mission plus that advice, with no authored situation
-hint. Planner mode keeps the legal alternatives instead of applying the old
-repetition filter. [Behavior, launch command and limitations](planner-proposal.md).
+write a recovery nudge of at most 40 words. Python owns a 24-attempt memory and
+triggers planning only after three repetitions without story progress. Accepted
+advice remains in Jev's context until story progress silently clears it and the
+stuck evidence. Python checks pause and context staleness before
+accepting advice, and planner failures pause visibly. Planner mode disables
+authored situation hints and keeps every legal alternative instead of applying
+the old repetition filter. [Behavior, launch command and limitations](planner-proposal.md).
 
 ## The Jev client
 
