@@ -105,13 +105,9 @@ class PlannerMemory:
     def accept(
         self, observation: Observation, advice: PlannerAdvice | None = None
     ) -> None:
-        """Activate validated advice, rejecting an unproven hint it replaces."""
+        """Activate validated advice without promoting or condemning the old hint."""
 
         if advice is not None:
-            if self._active_hypothesis is not None:
-                self.ledger.reject_hypothesis(
-                    self._active_hypothesis.stage, self._active_hypothesis.action_id
-                )
             stage = stage_key(observation)
             map_id = observation.position.map_id if observation.position else None
             self.ledger.record_hypothesis(
@@ -122,6 +118,11 @@ class PlannerMemory:
             )
         self._planned_progress = story_progress(observation)
         self._attempts.clear()
+
+    def expire_advice(self) -> None:
+        """Consume an immediate hint without treating it as proven or disproven."""
+
+        self._active_hypothesis = None
 
     def mark_advice_followed(self, action_id: str) -> None:
         active = self._active_hypothesis

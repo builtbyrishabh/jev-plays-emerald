@@ -412,6 +412,15 @@ class JevEmeraldMode(BotMode):
         observation = self._latest_observation
         if observation is None:
             return
+        if (
+            self._planner is not None
+            and self._advice is not None
+            and all(
+                action.id != self._advice.destination_action_id for action in actions
+            )
+        ):
+            self._planner.expire_advice()
+            self._advice = None
         state = asdict(observation)
         state["observation_note"] = (
             "HP values are exact observations read from game memory. "

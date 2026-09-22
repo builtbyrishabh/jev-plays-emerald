@@ -187,3 +187,30 @@ def test_reset_after_failed_refinement_keeps_existing_hypothesis(tmp_path):
     memory.sync_progress(replace(obs, rival_house_state=3))
 
     assert EvidenceLedger(path).summary("meet_neighbor", (0, 9))["verified"]
+
+
+def test_replacing_unverified_advice_does_not_call_it_rejected(tmp_path):
+    path = tmp_path / "m.json"
+    obs = observation((1, 4))
+    memory = PlannerMemory(ledger=EvidenceLedger(path))
+    memory.sync_progress(obs)
+    memory.accept(obs, advice("walk:1:4:6:12"))
+
+    memory.accept(obs, advice("talk:1"))
+
+    assert EvidenceLedger(path).summary("meet_neighbor", (1, 4))["rejected"] == []
+
+
+def test_expiring_an_immediate_hint_leaves_it_unverified(tmp_path):
+    path = tmp_path / "m.json"
+    obs = observation((1, 4))
+    memory = PlannerMemory(ledger=EvidenceLedger(path))
+    memory.sync_progress(obs)
+    memory.accept(obs, advice("walk:1:4:6:12"))
+
+    memory.expire_advice()
+    memory.sync_progress(replace(obs, rival_house_state=3))
+
+    summary = EvidenceLedger(path).summary("meet_neighbor", (1, 4))
+    assert summary["verified"] == []
+    assert summary["rejected"] == []

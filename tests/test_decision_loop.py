@@ -454,6 +454,44 @@ def test_mode_rejects_planner_destination_outside_pending_menu(mode_runtime):
         run.close()
 
 
+def test_consumed_hint_is_not_sent_backwards_after_its_destination_disappears(
+    mode_runtime,
+):
+    mode, reader, _, worker, _, telemetry = mode_runtime
+    ledger_path = telemetry._path.parent / "memory.json"
+    mode._planner = PlannerMemory(ledger=EvidenceLedger(ledger_path))
+    lab = replace(
+        reader.observation,
+        game_state="OVERWORLD",
+        menu_phase="none",
+        position=MapPosition((1, 4), (6, 12), "Down", "Birch's Lab"),
+    )
+    mode._planner.sync_progress(lab)
+    mode._advice = _advice(
+        "Leave the lab for May's House.", "walk:1:4:6:12"
+    )
+    mode._planner.accept(lab, mode._advice)
+    mode._planner.mark_advice_followed("walk:1:4:6:12")
+    town = replace(
+        lab,
+        position=MapPosition((0, 9), (10, 9), "Up", "Littleroot Town"),
+    )
+    may_house = Action("walk:0:9:14:8", "Enter May's House", town.context_id)
+    mode._latest_observation = town
+    mode._available_actions = (may_house,)
+
+    mode._start_model_request((may_house,), attempt=1)
+
+    request = next(
+        json.loads(line)
+        for line in telemetry._path.read_text().splitlines()
+        if json.loads(line)["event"] == "request"
+    )
+    assert request["state"]["decision_brief"]["planner_hint"] is None
+    assert mode.planner_view["advice"] is None
+    assert len(worker.futures) == 1
+
+
 def test_story_progress_discards_active_advice_without_calling_planner(mode_runtime):
     mode, reader, _, _, _, telemetry = mode_runtime
     mode._planner = PlannerMemory()
