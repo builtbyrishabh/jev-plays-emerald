@@ -143,6 +143,7 @@ def _observation_view(observation: Any) -> dict[str, object] | None:
                 "status": opponent.status,
             }
         ),
+        "recent_dialogue": list(observation.recent_dialogue),
     }
 
 

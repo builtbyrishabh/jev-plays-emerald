@@ -286,6 +286,7 @@ def observation_from_state(state: dict) -> Observation:
             )
             for s in state.get("signs") or ()
         ),
+        recent_dialogue=tuple(state.get("recent_dialogue") or ()),
     )
 
 

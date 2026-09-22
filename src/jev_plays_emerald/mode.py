@@ -13,7 +13,13 @@ from modules.modes import BattleAction, BotMode
 
 from jev_plays_emerald.actions import Action, ActionExecutor, FrameState, Outcome
 from jev_plays_emerald.jev import JevChoice, JevGatewayError, JevTimeoutError, JsonValue
-from jev_plays_emerald.opening import MISSION, RivalProgress, decision_instructions, legal_actions
+from jev_plays_emerald.opening import (
+    MISSION,
+    RivalProgress,
+    authored_hints_enabled,
+    decision_instructions,
+    legal_actions,
+)
 from jev_plays_emerald.planner import PlannerAdvice, PlannerMemory, planner_model, story_progress
 from jev_plays_emerald.service import default_choice_client
 from jev_plays_emerald.state import Observation, ObservationReader, RecentOutcome
@@ -402,6 +408,7 @@ class JevEmeraldMode(BotMode):
         }
         instructions = decision_instructions(
             observation, advice=self._advice.text if self._advice is not None else None,
+            authored_hints=authored_hints_enabled(),
         )
         with self._state_lock:
             if (

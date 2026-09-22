@@ -129,6 +129,27 @@ paused safely when a protocol bug routed a planner request as a Jev request
 to replace exact-action advice with persistent objectives and conditional
 steps. These attempts are not completion evidence.
 
+## Dialogue-only experiment — 22 September 2026
+
+A fresh run used no LLM planner (`JEV_PLANNER_MODEL` unset) and no authored
+situation hints (`JEV_AUTHORED_HINTS=0`). Jev received only the general mission,
+structured game state, legal action labels and a rolling transcript read from
+Emerald's live dialogue buffer.
+
+Jev correctly acted on Mom's dialogue: it went upstairs, set the clock and
+continued through the TV scene. It then visited Birch's Lab and read that Birch
+was away doing fieldwork. The run was paused after 82 Jev decisions and 42
+deterministic setup/dialogue actions because it was looping in and around the
+lab: 33 talks with the aide, 32 attempts to use the lab exit and 9 re-entries
+from town. It had not reached the rival's house or obtained a starter.
+
+This exposes two separate facts. Dialogue gives Jev enough information for the
+clock objective without a route hint. It does not by itself recover from the
+known doorway executor problem: an exit can report success without changing
+maps. Without planner correction, Jev repeatedly retries the plausible exit or
+the same NPC. The run used 227,688 Jev input tokens and 16,807 output tokens;
+at the recorded Jev price, its estimated cost was $0.00956.
+
 The normal launcher was also started with a separate fresh profile,
 `planner-viewer-20260922`. The real video, LLM advice panel, call count and Jev
 choices were inspected in the browser. That ongoing viewer run is separate

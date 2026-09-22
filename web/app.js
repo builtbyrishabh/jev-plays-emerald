@@ -149,6 +149,22 @@ function renderRecent(choices) {
   }
 }
 
+function renderDialogue(messages) {
+  const container = document.getElementById("dialogue");
+  container.replaceChildren();
+  for (const message of messages ?? []) {
+    const item = document.createElement("li");
+    item.textContent = message;
+    container.append(item);
+  }
+  if (!container.children.length) {
+    const empty = document.createElement("li");
+    empty.className = "empty";
+    empty.textContent = "No dialogue captured yet.";
+    container.append(empty);
+  }
+}
+
 function render(state) {
   const view = buildViewModel(state);
   text("connection", "Live");
@@ -176,6 +192,7 @@ function render(state) {
   control.dataset.paused = String(Boolean(state.paused));
 
   renderActions(state);
+  renderDialogue(state.observation?.recent_dialogue);
   const party = document.getElementById("party");
   party.replaceChildren();
   for (const member of state.observation?.party ?? []) renderHp(party, member, "Party");

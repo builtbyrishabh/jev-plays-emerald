@@ -137,6 +137,8 @@ button:disabled { cursor: wait; opacity: 0.55; }
 .recent-list li:not(.empty) { display: flex; justify-content: space-between; gap: 10px; font-size: 0.72rem; }
 .recent-list strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-list span { flex: 0 0 auto; color: var(--muted); }
+.dialogue-list { display: grid; gap: 8px; margin: 0; padding-left: 18px; }
+.dialogue-list li:not(.empty) { color: var(--text); font-size: 0.76rem; line-height: 1.45; }
 
 @keyframes pulse { 50% { opacity: 0.4; transform: scale(0.82); } }
 

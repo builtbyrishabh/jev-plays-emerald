@@ -1,5 +1,5 @@
 from concurrent.futures import Future
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 import json
 from pathlib import Path
 import sys
@@ -215,6 +215,28 @@ def test_one_model_request_stays_neutral_until_its_choice_is_ready(mode_runtime)
     }
     assert telemetry.snapshot.last_decision is not None
     assert telemetry.snapshot.last_decision.source == "model"
+
+
+def test_model_request_includes_dialogue_jev_has_read(mode_runtime):
+    mode, reader, _, _, _, telemetry = mode_runtime
+    reader.observation = replace(
+        reader.observation,
+        recent_dialogue=("PROF. BIRCH is in trouble!", "Choose a POKEMON."),
+    )
+    run = mode.run()
+    try:
+        next(run)
+        request = next(
+            event
+            for event in map(json.loads, telemetry._path.read_text().splitlines())
+            if event["event"] == "request"
+        )
+        assert request["state"]["recent_dialogue"] == [
+            "PROF. BIRCH is in trouble!",
+            "Choose a POKEMON.",
+        ]
+    finally:
+        run.close()
 
 
 def test_requested_name_is_confirmed_by_jev_without_a_planner_call(mode_runtime):

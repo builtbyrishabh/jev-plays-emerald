@@ -185,3 +185,21 @@ def test_uninitialized_game_state_returns_neutral_observation_without_reading_ra
         assert legal_actions(observation) == ()
     finally:
         sys.path.remove(str(POKEBOT_ROOT))
+
+
+def test_dialogue_memory_keeps_recent_distinct_messages():
+    from jev_plays_emerald.state import DialogueMemory
+
+    memory = DialogueMemory(limit=3)
+    memory.remember("  Go set the clock\nin your room.  ")
+    memory.remember("Go set the clock in your room.")
+    memory.remember("")
+    memory.remember("Professor Birch is next door.")
+    memory.remember("May went to Route 103.")
+    memory.remember("Bring your new Pokemon to me.")
+
+    assert memory.messages == (
+        "Professor Birch is next door.",
+        "May went to Route 103.",
+        "Bring your new Pokemon to me.",
+    )

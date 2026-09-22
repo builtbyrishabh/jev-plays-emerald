@@ -5,11 +5,28 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
+from collections import deque
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from jev_plays_emerald.actions import Outcome
+
+
+class DialogueMemory:
+    """Keep a small transcript of dialogue Jev has actually seen."""
+
+    def __init__(self, *, limit: int = 8) -> None:
+        self._messages: deque[str] = deque(maxlen=limit)
+
+    @property
+    def messages(self) -> tuple[str, ...]:
+        return tuple(self._messages)
+
+    def remember(self, text: str | None) -> None:
+        normalized = " ".join((text or "").split())
+        if normalized and (not self._messages or normalized != self._messages[-1]):
+            self._messages.append(normalized)
 
 
 @dataclass(frozen=True)
@@ -156,6 +173,7 @@ class Observation:
     exits: tuple[MapExit, ...] = ()
     objects: tuple[MapObject, ...] = ()
     signs: tuple[MapSign, ...] = ()
+    recent_dialogue: tuple[str, ...] = ()
 
 
 def observation_context_id(
@@ -168,6 +186,7 @@ def observation_context_id(
     opening_flags: OpeningFlags,
     active_battler: ActiveBattler | None = None,
     opponent: OpponentBattler | None = None,
+    recent_dialogue: tuple[str, ...] = (),
 ) -> str:
     """Identify a decision situation without changing for movement animation frames."""
 
@@ -181,6 +200,7 @@ def observation_context_id(
         "opening_flags": opening_flags,
         "active_battler": active_battler,
         "opponent": opponent,
+        "recent_dialogue": recent_dialogue,
     }
     encoded = json.dumps(payload, default=lambda value: value.__dict__, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode()).hexdigest()[:16]
@@ -195,6 +215,7 @@ class ObservationReader:
         # frame. Only the open-world enumerator consumes them, so the caller that
         # knows whether it is running asks for them.
         self.landmarks = landmarks
+        self._dialogue = DialogueMemory()
 
     def read(self, recent_outcomes: tuple[RecentOutcome, ...] = ()) -> Observation:
         if threading.get_ident() != self._owner_thread:
@@ -239,6 +260,16 @@ class ObservationReader:
                 position = None
 
         menu_phase, battle_phase = _read_phases(state)
+        if menu_phase == "script":
+            from modules.game import decode_string
+            from modules.text_printer import get_text_printer
+
+            try:
+                if get_text_printer().active:
+                    self._dialogue.remember(decode_string(read_symbol("gStringVar4", size=0x3E8)))
+            except (RuntimeError, ValueError):
+                # Some transition frames do not have a valid text-printer buffer.
+                pass
         party = tuple(
             PartyMember(
                 pokemon.species.name,
@@ -309,6 +340,7 @@ class ObservationReader:
             opening_flags,
             active_battler,
             opponent,
+            self._dialogue.messages,
         )
         controllable = player_avatar_is_controllable() if state is GameState.OVERWORLD else False
         return Observation(
@@ -331,6 +363,7 @@ class ObservationReader:
             rival_house_state=get_event_var("LITTLEROOT_RIVAL_STATE"),
             lab_state=get_event_var("BIRCH_LAB_STATE"),
             player_gender=get_player().gender,
+            recent_dialogue=self._dialogue.messages,
             **_read_landmarks(position if controllable and self.landmarks else None),
         )
 

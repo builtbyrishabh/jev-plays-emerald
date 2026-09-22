@@ -425,6 +425,25 @@ def test_the_truck_hint_does_not_talk_about_the_house():
     assert "wall clock" in decision_instructions(house)
 
 
+def test_authored_hints_can_be_disabled_for_dialogue_only_play():
+    from modules.map_data import MapRSE
+
+    from jev_plays_emerald.opening import MISSION, decision_instructions
+
+    truck = observation(
+        position=MapPosition(MapRSE.INSIDE_OF_TRUCK.value, (1, 1), "Up"),
+        party=(),
+        recent_dialogue=("We need to set the clock upstairs.",),
+        opening_flags=OpeningFlags(False, False, False),
+    )
+
+    instructions = decision_instructions(truck, authored_hints=False)
+
+    assert instructions.startswith(MISSION)
+    assert "moving truck" not in instructions
+    assert "wall clock" not in instructions
+
+
 def test_the_hint_stops_routing_you_once_you_have_arrived():
     """Standing on Route 103, "pass through Oldale" sent Jev back south."""
 

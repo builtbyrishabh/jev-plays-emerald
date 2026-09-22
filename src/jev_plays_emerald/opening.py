@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 
@@ -191,7 +192,18 @@ _BASE_MISSION = MISSION + (
 )
 
 
-def decision_instructions(observation: Observation, *, advice: str | None = None) -> str:
+def authored_hints_enabled() -> bool:
+    return os.environ.get("JEV_AUTHORED_HINTS", "1").strip().casefold() not in {
+        "0", "false", "no", "off",
+    }
+
+
+def decision_instructions(
+    observation: Observation,
+    *,
+    advice: str | None = None,
+    authored_hints: bool = True,
+) -> str:
     """Mission text plus a hint for the situation Jev is actually deciding in.
 
     The open-world action set deliberately carries no route opinion, so the
@@ -202,7 +214,7 @@ def decision_instructions(observation: Observation, *, advice: str | None = None
 
     if observation.game_state == "NAMING_SCREEN" and not observation.party:
         return f"Your requested player name is {PLAYER_NAME}. Confirm the offered naming action."
-    hint = _situation_hint(observation) if advice is None else advice
+    hint = _situation_hint(observation) if advice is None and authored_hints else advice
     if advice:
         hint = (
             "Planner advice is a persistent objective, not a fixed action. Adapt it to your "

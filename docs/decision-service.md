@@ -30,6 +30,11 @@ implementations stay runnable while they are compared. The launcher starts the
 service once and throws it away before the emulator boots, so a missing `node`
 or an unbuilt `service/` fails at launch rather than at the first decision.
 
+`JEV_AUTHORED_HINTS=0` removes Python's situation hints from Jev's choice
+instructions. The general mission remains, while recent in-game dialogue is
+included in the structured observation. Leave `JEV_PLANNER_MODEL` unset for a
+dialogue-only Jev experiment.
+
 ## Transport
 
 Newline-delimited JSON on the child's stdin and stdout, one line per request,

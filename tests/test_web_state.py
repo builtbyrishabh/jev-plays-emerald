@@ -81,6 +81,7 @@ def _mode_view(
         recent_outcomes=(),
         opponent=OpponentBattler("Treecko", 5, 8, 19, "Healthy"),
         lab_state=lab_state,
+        recent_dialogue=("MAY: Let's battle!", "PROF. BIRCH: Be careful."),
     )
     decision = DecisionRecord(
         context_id=observation.context_id,
@@ -146,6 +147,10 @@ def test_owner_snapshot_is_json_safe_and_contains_only_viewer_fields(plugin_modu
     }
     assert snapshot["observation"]["party"][0]["hp"] == 17
     assert snapshot["observation"]["opponent"]["hp"] == 8
+    assert snapshot["observation"]["recent_dialogue"] == [
+        "MAY: Let's battle!",
+        "PROF. BIRCH: Be careful.",
+    ]
     assert snapshot["recent_choices"] == [snapshot["status"]["last_decision"]]
     assert snapshot["progress"] == {
         "starter": True,
@@ -201,7 +206,9 @@ def test_pause_control_queues_owner_thread_change_without_accessing_emulator(
         try:
             viewer = await client.get("/jev/index.html")
             assert viewer.status == 200
-            assert "Jev Plays Emerald" in await viewer.text()
+            viewer_html = await viewer.text()
+            assert "Jev Plays Emerald" in viewer_html
+            assert 'id="dialogue"' in viewer_html
 
             invalid = await client.post("/jev/control", json={"paused": "true"})
             assert invalid.status == 400
