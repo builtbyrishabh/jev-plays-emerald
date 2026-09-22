@@ -306,9 +306,10 @@ class JevEmeraldMode(BotMode):
             ):
                 return
             actions = self._available_actions
-            if len(actions) == 1:
+            naming = len(actions) == 1 and actions[0].id == "setup:name"
+            if len(actions) == 1 and not naming:
                 self._pending_action = actions[0]
-        if len(actions) == 1:
+        if len(actions) == 1 and not naming:
             action = actions[0]
             self._telemetry.selected(
                 context_id=action.context_id,
@@ -318,7 +319,7 @@ class JevEmeraldMode(BotMode):
             if self._paused:
                 self._telemetry.pause()
             return
-        if self._planner is not None and self._latest_observation is not None:
+        if not naming and self._planner is not None and self._latest_observation is not None:
             reason = self._planner.reason(self._latest_observation)
             if reason is not None:
                 self._start_plan_request(actions, reason)

@@ -6,7 +6,7 @@ explicit: planner errors pause, with no silent fallback to authored advice.
 
 ```bash
 cd service && pnpm install && cd ..
-JEV_PLANNER_MODEL=openai/gpt-5.6-sol uv run --env-file .env python -m jev_plays_emerald \
+JEV_PLANNER_MODEL=openai/gpt-5.6-luna uv run --env-file .env python -m jev_plays_emerald \
   --rom "roms/Pokemon - Emerald Version (USA, Europe).gba" --profile planner-demo
 ```
 

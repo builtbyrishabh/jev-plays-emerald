@@ -217,6 +217,28 @@ def test_one_model_request_stays_neutral_until_its_choice_is_ready(mode_runtime)
     assert telemetry.snapshot.last_decision.source == "model"
 
 
+def test_requested_name_is_confirmed_by_jev_without_a_planner_call(mode_runtime):
+    from dataclasses import replace
+    from jev_plays_emerald.planner import PlannerMemory
+
+    mode, reader, actions, worker, _, telemetry = mode_runtime
+    reader.observation = replace(reader.observation, game_state="NAMING_SCREEN", menu_phase="none")
+    mode._planner = PlannerMemory()
+    run = mode.run()
+    try:
+        next(run)
+        assert actions.executed == []
+        assert mode.planner_view["calls"] == 0
+        request = next(e for e in map(json.loads, telemetry._path.read_text().splitlines()) if e["event"] == "request")
+        assert request["questions"]["action"]["criteria"] == {"setup:name": "Confirm your requested player name: Jev"}
+        worker.futures[0].set_result(JevChoice("setup:name", {"setup:name": 1.0}, None, TokenUsage(), 1))
+        next(run)
+        assert actions.executed[0].id == "setup:name"
+        assert telemetry.snapshot.last_decision.source == "model"
+    finally:
+        run.close()
+
+
 def test_planner_advice_replaces_hints_and_jev_keeps_all_choices(mode_runtime):
     from jev_plays_emerald.planner import PlannerAdvice, PlannerMemory
 

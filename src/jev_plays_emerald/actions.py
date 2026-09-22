@@ -302,6 +302,9 @@ ACTION_EXECUTORS: dict[str, ActionPlanFactory] = {
 }
 
 
+PLAYER_NAME = "Jev"
+
+
 def _setup_plan(action: Action) -> ExecutionPlan:
     def setup():
         from modules.context import context
@@ -314,18 +317,13 @@ def _setup_plan(action: Action) -> ExecutionPlan:
                 context.emulator.press_button("A")
                 yield
         elif kind == "name":
+            from modules.keyboard import type_in_naming_screen
+
             while not task_is_active("Task_HandleInput"):
                 yield
-            # Fixed keyboard positions on the supported English Emerald ROM.
-            # This is setup configuration, never a model-selected game action.
-            for button in ("Down", "Right", "Right", "Right", "A", "Up", "Right", "A",
-                           "Down", "Down", "Down", "Left", "Left", "A", "Start", "A"):
-                context.emulator.press_button(button)
-                for _ in range(17):
-                    yield
-            while get_game_state() is GameState.NAMING_SCREEN:
-                context.emulator.press_button("A")
-                yield
+            # Jev confirms the requested name; upstream types it using the live
+            # keyboard state, including the lowercase page for e and v.
+            yield from type_in_naming_screen(PLAYER_NAME, max_length=7)
         elif kind == "clock":
             context.emulator.press_button("A")
             yield

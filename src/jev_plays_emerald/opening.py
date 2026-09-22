@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from jev_plays_emerald.actions import Action, Outcome
+from jev_plays_emerald.actions import PLAYER_NAME, Action, Outcome
 from jev_plays_emerald.state import MoveState, Observation, PartyMember
 
 
@@ -200,6 +200,8 @@ def decision_instructions(observation: Observation, *, advice: str | None = None
     This nudges without deciding - every listed action stays Jev's to pick.
     """
 
+    if observation.game_state == "NAMING_SCREEN" and not observation.party:
+        return f"Your requested player name is {PLAYER_NAME}. Confirm the offered naming action."
     hint = _situation_hint(observation) if advice is None else advice
     if advice:
         hint = (
@@ -294,9 +296,9 @@ def _opening_actions(observation: Observation, *, suppress_futile: bool = True) 
         return (Action(identifier, label, observation.context_id),)
 
     if observation.game_state in {"TITLE_SCREEN", "MAIN_MENU"} and not observation.party:
-        return action("setup:new-game", "Configured New Game: boy, JEV, no nickname")
+        return action("setup:new-game", f"Configured New Game: boy, {PLAYER_NAME}, no nickname")
     if observation.game_state == "NAMING_SCREEN" and not observation.party:
-        return action("setup:name", "Enter configured player name JEV")
+        return action("setup:name", f"Confirm your requested player name: {PLAYER_NAME}")
     if "Task_SetClock_HandleInput" in observation.tasks:
         return action("setup:clock", "Set the opening clock to the default 10:00 AM")
     if observation.game_state != "OVERWORLD":

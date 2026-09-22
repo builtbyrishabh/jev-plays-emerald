@@ -24,7 +24,7 @@ cd service && pnpm install
 JEV_DECISION_SERVICE=1 uv run --env-file .env python -m jev_plays_emerald --rom ...
 ```
 
-Setting `JEV_PLANNER_MODEL=openai/gpt-5.6-sol` also enables the service and its
+Setting `JEV_PLANNER_MODEL=openai/gpt-5.6-luna` also enables the service and its
 `plan` request. Without either setting the direct Python client (`jev.py`) is used, so both
 implementations stay runnable while they are compared. The launcher starts the
 service once and throws it away before the emulator boots, so a missing `node`
