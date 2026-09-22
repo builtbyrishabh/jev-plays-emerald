@@ -22,6 +22,29 @@ class EvidenceLedger:
     def _fresh(self) -> dict[str, Any]:
         return {"schema_version": _SCHEMA_VERSION, "entries": []}
 
+    def remember_plan(self, stage: str, guidance: dict[str, str]) -> None:
+        """Keep a resumable goal, never replay its old action without validation."""
+        self._data["plan"] = {"stage": stage, **guidance}
+        self._write()
+
+    def remembered_plan(self, stage: str) -> dict | None:
+        plan = self._data.get("plan")
+        if not isinstance(plan, dict) or plan.get("stage") != stage:
+            return None
+        return {key: plan[key] for key in ("hint", "avoid") if key in plan}
+
+    def remember_route(self, from_map: tuple[int, int], to_map: tuple[int, int], action_id: str) -> None:
+        route = {"from_map": list(from_map), "to_map": list(to_map), "action_id": action_id}
+        routes = self._data.setdefault("routes", [])
+        if route not in routes:
+            self._data["routes"] = [*routes, route][-80:]
+            self._write()
+
+    def routes(self, map_id: tuple[int, int] | None) -> list[dict]:
+        encoded = self._encoded_map(map_id)
+        return [dict(route) for route in self._data.get("routes", [])
+                if route.get("from_map") == encoded or route.get("to_map") == encoded][-8:]
+
     def _load(self) -> dict[str, Any]:
         try:
             document = json.loads(self.path.read_text())

@@ -52,6 +52,61 @@
       "enumerated": true,
       "summary": "Walk to a reachable Pokemon Center, restore the party, and return outside."
     },
+    "answer": {
+      "id": "answer:<yes|no>",
+      "enumerated": true,
+      "summary": "Answer a meaningful dialogue question."
+    },
+    "shop-buy": {
+      "id": "shop-buy:<item name>:<quantity>",
+      "enumerated": true,
+      "summary": "Buy an affordable offered item using normal shop inputs."
+    },
+    "shop-exit": {
+      "id": "shop-exit",
+      "enumerated": true,
+      "summary": "Leave the shop menu."
+    },
+    "forced-switch": {
+      "id": "forced-switch:<party index>",
+      "enumerated": true,
+      "summary": "Choose an available replacement after a Pokemon faints."
+    },
+    "learn-move": {
+      "id": "learn-move:<move index|skip>",
+      "enumerated": true,
+      "summary": "Replace a move or decline a newly learned move."
+    },
+    "evolve": {
+      "id": "evolve:<yes|no>",
+      "enumerated": true,
+      "summary": "Allow or cancel the current evolution."
+    },
+    "field-item": {
+      "id": "field-item:<item name>:<party index>",
+      "enumerated": true,
+      "summary": "Heal an injured party member outside battle."
+    },
+    "train": {
+      "id": "train:<map group>:<map number>:<x1>:<y1>:<x2>:<y2>",
+      "enumerated": true,
+      "summary": "Seek a wild encounter in reachable grass for training or catching."
+    },
+    "tutorial": {
+      "id": "tutorial:advance",
+      "enumerated": false,
+      "summary": "Advance Wally's forced catching demonstration without choosing for him."
+    },
+    "caught-dex": {
+      "id": "caught-dex:continue",
+      "enumerated": false,
+      "summary": "Close the forced Pokédex registration page after a catch."
+    },
+    "nickname": {
+      "id": "nickname:keep",
+      "enumerated": false,
+      "summary": "Confirm the configured default species name if its naming screen is already open."
+    },
     "setup": {
       "id": "setup:<new-game|name|clock>",
       "enumerated": false,

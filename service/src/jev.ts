@@ -1,6 +1,6 @@
 import { gateway } from '@ai-sdk/gateway'
 // Exported as experimental: the evaluation-model API can still change shape.
-import { experimental_evaluate as evaluate } from 'ai'
+import { experimental_evaluate as evaluate, InvalidResponseDataError } from 'ai'
 import { actionKind, isKnownActionKind } from './actions.ts'
 
 export const JEV_MODEL = 'typesafe-ai/jev'
@@ -34,8 +34,8 @@ export type ChoiceResult = {
 }
 
 export class JevError extends Error {
-  /** "timeout" and 429/5xx are the cases the mode is allowed to retry. */
-  readonly kind: 'timeout' | 'gateway' | 'invalid'
+  /** Python bounds retries for timeouts, malformed responses, and 429/5xx. */
+  readonly kind: 'timeout' | 'gateway' | 'invalid' | 'invalid-response'
   readonly statusCode: number | undefined
 
   constructor(message: string, kind: JevError['kind'], statusCode?: number) {
@@ -99,8 +99,11 @@ function read(value: unknown, key: string): unknown {
     : undefined
 }
 
-function asJevError(error: unknown, timeoutMs: number): JevError {
+export function asJevError(error: unknown, timeoutMs: number): JevError {
   if (error instanceof JevError) return error
+  if (InvalidResponseDataError.isInstance(error)) {
+    return new JevError(error.message, 'invalid-response')
+  }
   if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
     return new JevError(`Jev request timed out after ${timeoutMs} ms`, 'timeout')
   }

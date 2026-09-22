@@ -1,5 +1,6 @@
 """PokéBot Gen3 plugin entrypoint for Jev Plays Emerald."""
 
+from dataclasses import asdict
 from collections import deque
 from collections.abc import Iterable
 from pathlib import Path
@@ -21,20 +22,25 @@ class ViewerStatePublisher:
     """Build browser data only from immutable values already owned by the mode."""
 
     def __init__(self) -> None:
+        self._mode: JevEmeraldMode | None = None
+        self._gym_seen = False
         self._last_decision: object | None = None
-        self._recent_choices: deque[dict[str, object]] = deque(maxlen=6)
+        self._recent_choices: deque[dict[str, object]] = deque(maxlen=50)
 
     def build(self, mode: JevEmeraldMode) -> dict[str, object]:
+        if self._mode is not mode:
+            self._gym_seen = False
+            self._recent_choices.clear()
+            self._last_decision = None
+            self._mode = mode
         status = mode.status
         observation = mode.observation
         completed = bool(getattr(mode, "completed", False))
-        phase = status.phase
-        if (
-            observation is not None
-            and observation.opening_flags.defeated_rival_route103
-            and not completed
-        ):
-            phase = "checkpoint"
+        checkpoint = bool(getattr(mode, "checkpoint", False))
+        target = getattr(mode, "target", "first-gym")
+        phase = "completed" if completed else "checkpoint" if checkpoint else status.phase
+        if observation is not None and observation.position is not None:
+            self._gym_seen |= tuple(observation.position.map_id) == (11, 3)
 
         decision = _decision_view(
             status.last_decision,
@@ -43,15 +49,27 @@ class ViewerStatePublisher:
             and status.last_decision.context_id == status.context_id
             else {},
         )
+        # Preserve action names after the live context moves beyond this choice.
+        if status.last_decision is self._last_decision and self._recent_choices:
+            decision = self._recent_choices[-1]
         if status.last_decision is not None and status.last_decision is not self._last_decision:
             self._recent_choices.append(decision)
             self._last_decision = status.last_decision
 
         return {
             "version": 1,
+            "decision_count": status.decision_count,
+            "usage": {
+                "decision": {**asdict(status.decision_usage), "pending": status.decision_usage.pending},
+                "planner": {**asdict(status.planner_usage), "pending": status.planner_usage.pending},
+            },
             "mode": mode.name(),
             "paused": mode.paused,
-            "goal": _current_goal(observation, completed),
+            "target": target,
+            "checkpoint": checkpoint,
+            "manual_actions": getattr(mode, "manual_actions", 0),
+            "mission": "Earn the Stone Badge in Rustboro" if target == "first-gym" else "Win the Route 103 rival battle",
+            "goal": _current_goal(observation, completed, target, checkpoint),
             "planner": getattr(mode, "planner_view", None),
             "status": {
                 "phase": phase,
@@ -65,7 +83,7 @@ class ViewerStatePublisher:
             "available_actions": [_action_view(action) for action in mode.available_actions],
             "active_action": _action_view(mode.active_action),
             "recent_choices": list(self._recent_choices),
-            "progress": _progress_view(observation, completed),
+            "progress": _progress_view(observation, completed, self._gym_seen),
         }
 
 
@@ -147,32 +165,47 @@ def _observation_view(observation: Any) -> dict[str, object] | None:
     }
 
 
-def _progress_view(observation: Any, completed: bool) -> dict[str, bool]:
-    if observation is None:
-        return {"starter": False, "rescue": False, "rival": False, "completed": completed}
+def _progress_view(observation: Any, completed: bool, gym_seen: bool = False) -> dict[str, bool]:
+    flags = observation.opening_flags if observation is not None else None
+    badge = bool(getattr(flags, "stone_badge", False))
     return {
-        "starter": bool(observation.party),
-        "rescue": observation.opening_flags.rescued_birch,
-        "rival": observation.opening_flags.defeated_rival_route103,
+        "starter": bool(observation.party) if observation is not None else False,
+        "rescue": bool(getattr(flags, "rescued_birch", False)),
+        "rival": bool(getattr(flags, "defeated_rival_route103", False)),
+        "pokedex": bool(getattr(flags, "received_pokedex", False)),
+        "petalburg": bool(getattr(flags, "petalburg_tutorial", False)),
+        "woods": bool(getattr(flags, "devon_goods_saved", False)),
+        "gym": gym_seen or badge,
+        "stone_badge": badge,
         "completed": completed,
     }
 
 
-def _current_goal(observation: Any, completed: bool) -> str:
+def _current_goal(observation: Any, completed: bool, target: str, checkpoint: bool) -> str:
     if completed:
-        return "Opening complete"
+        return "Stone Badge earned this run" if target == "first-gym" else "Rival battle won this run"
+    if checkpoint:
+        return "Loaded checkpoint already has the Stone Badge" if target == "first-gym" else "Loaded checkpoint already has the rival flag"
     if observation is None:
         return "Waiting for the first game observation"
-    if observation.opening_flags.defeated_rival_route103:
-        return "Loaded checkpoint already has the rival flag"
+    flags = observation.opening_flags
+    if flags.defeated_rival_route103:
+        if target == "rival":
+            return "Checking rival battle completion"
+        if getattr(flags, "stone_badge", False):
+            return "Stone Badge observed; this run's victory is unverified"
+        if not flags.received_pokedex:
+            return "Return to Birch's lab for the Pokédex"
+        if not getattr(flags, "petalburg_tutorial", False):
+            return "Meet Norman and help Wally in Petalburg"
+        if not getattr(flags, "devon_goods_saved", False):
+            return "Help the Devon researcher in Petalburg Woods"
+        return "Prepare for Roxanne and earn the Stone Badge"
     if not observation.party:
         return "Choose a starter and rescue Professor Birch"
-    if not observation.opening_flags.rescued_birch:
+    if not flags.rescued_birch:
         return "Rescue Professor Birch"
-    if (
-        observation.lab_state < 3
-        and not observation.opening_flags.rival_left_for_route103
-    ):
+    if observation.lab_state < 3 and not flags.rival_left_for_route103:
         return "Meet Professor Birch in his lab"
     return "Reach Route 103 and win the rival battle"
 

@@ -119,8 +119,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rom", required=True, type=Path, help="path to the user-provided Emerald ROM")
     parser.add_argument("--profile", default="jev-emerald", help="local PokéBot profile name")
+    parser.add_argument("--target", choices=("first-gym", "rival"), default=os.environ.get("JEV_TARGET", "first-gym"),
+                        help="mission to complete (default: first-gym)")
     parser.add_argument("--check", action="store_true", help="validate and prepare without starting the emulator")
     arguments = parser.parse_args(argv)
+    os.environ["JEV_TARGET"] = arguments.target
 
     rom = arguments.rom.expanduser().resolve()
     verify_rom(rom)

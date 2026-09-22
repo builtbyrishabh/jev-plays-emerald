@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
-import os
 import re
 from dataclasses import dataclass
 
 from jev_plays_emerald.actions import PLAYER_NAME, Action, Outcome
 from jev_plays_emerald.state import MoveState, Observation, PartyMember
+from jev_plays_emerald.journey import configured_target
 
 
 def legal_actions(observation: Observation, *, suppress_futile: bool = True) -> tuple[Action, ...]:
+    from jev_plays_emerald.gameplay import extra_actions
+
+    menu_actions = extra_actions(observation)
+    if menu_actions:
+        return menu_actions
     if observation.game_state == "CHOOSE_STARTER" or observation.menu_phase == "starter":
         return tuple(
             Action(f"starter:{starter.casefold()}", f"Choose {starter}", observation.context_id)
@@ -35,6 +40,10 @@ def legal_actions(observation: Observation, *, suppress_futile: bool = True) -> 
         # before Fight has been selected.
         if observation.battle_phase != "action":
             return moves
+        if not moves:
+            # Fight lets Emerald select Struggle when no move can be used.
+            # Upstream's normal move executor already handles that message.
+            moves = (Action("battle-move:0", "Choose Fight to use Struggle (no usable moves remain)", observation.context_id),)
         run = (Action("battle-run", "Attempt to escape this wild encounter", observation.context_id),)
         extras = (
             _battle_switch_actions(observation)
@@ -181,128 +190,43 @@ def party_needs_healing(party: tuple[PartyMember, ...]) -> bool:
     )
 
 
-MISSION = (
-    "You are playing Pokemon Emerald. Your mission, in order: find and rescue "
-    "Professor Birch, choosing a starter when the rescue encounter prompts you, "
-    "then travel north and beat your rival on Route 103."
-)
-_BASE_MISSION = MISSION + (
-    " "
-    "Choose exactly one legal action for the current state and treat the probabilities "
-    "as your preference over the offered actions."
+MISSION = "Goal: defeat your rival on Route 103."
+GYM_MISSION = (
+    "Goal: earn the Stone Badge."
 )
 
 
-def authored_hints_enabled() -> bool:
-    return os.environ.get("JEV_AUTHORED_HINTS", "1").strip().casefold() not in {
-        "0", "false", "no", "off",
-    }
+def current_mission() -> str:
+    return GYM_MISSION if configured_target() == "first-gym" else MISSION
 
 
 def decision_instructions(
     observation: Observation,
     *,
     advice: str | None = None,
-    authored_hints: bool = True,
 ) -> str:
-    """Mission text plus a hint for the situation Jev is actually deciding in.
+    """Give Jev a goal and a compact method for choosing its next action.
 
-    The open-world action set deliberately carries no route opinion, so the
-    guidance the model needs to make a good choice lives here instead: which
-    direction the story wants next, and how to play the battle in front of it.
-    This nudges without deciding - every listed action stays Jev's to pick.
+    Recent dialogue and story state are already in the model state. The prompt
+    tells Jev how to use that evidence instead of repeating the full route on
+    every decision. Luna can add a general recovery hint after repeated stalls,
+    while every listed action stays Jev's to pick.
     """
 
     if observation.game_state == "NAMING_SCREEN" and not observation.party:
         return f"Your requested player name is {PLAYER_NAME}. Confirm the offered naming action."
-    hint = _situation_hint(observation) if advice is None and authored_hints else advice
-    if advice:
-        hint = (
-            "The decision brief above comes from observed game state. Luna intervened because "
-            "you repeated an action three times, but you—not Luna—choose the next legal action. "
-            "Use its exact location and success signal, and avoid the named dead end. Luna: "
-            + advice
-        )
-    return f"{_BASE_MISSION} {hint}" if hint else _BASE_MISSION
-
-
-def _situation_hint(observation: Observation) -> str:
-    from modules.map_data import MapRSE
-
-    if observation.game_state == "CHOOSE_STARTER" or observation.menu_phase == "starter":
-        return (
-            "This is your starter choice: Treecko (Grass), Torchic (Fire), or Mudkip (Water). "
-            "Any of them can win the opening, so pick one and commit. Expect the rival to "
-            "carry the starter that beats your type."
-        )
-    if observation.game_state == "BATTLE":
-        if observation.trainer_id in RIVAL_TRAINER_IDS:
-            return (
-                "This is the rival battle that completes your mission. Their lone Pokemon is "
-                "under-levelled, so attack with your highest-damage move every turn and never run."
-            )
-        if observation.trainer_id is not None:
-            return "This is a trainer battle. Use your strongest damaging move and do not run."
-        return (
-            "This is a wild battle. End it fast with your highest-damage move; only run if your "
-            "Pokemon is close to fainting and you need it healthy for the rival."
-        )
-    flags = observation.opening_flags
-    here = observation.position.map_id if observation.position is not None else None
-    if here == MapRSE.INSIDE_OF_TRUCK.value:
-        return (
-            "You are riding in the back of the moving truck taking your family to Littleroot "
-            "Town, and it has arrived. The boxes around you are scenery. Go through the doorway "
-            "to step outside; nothing else in here advances the game."
-        )
-    if not flags.set_wall_clock:
-        return (
-            "You just moved into your new house in Littleroot Town. The game will not let you "
-            "leave yet: first go up to your bedroom and examine the wall clock to set the time, "
-            "then head back downstairs. Do not try to leave the house until the clock is set."
-        )
-    if not observation.party:
-        if observation.rival_house_state < 3:
-            # The town's north exit tiles run NeedPokemonTrigger and push you
-            # back until this is done, so "head north" is not yet advice. Name
-            # the houses: both are on the menu, and one of them is your own.
-            neighbour, own = (
-                ("Mays House", "Brendans House")
-                if observation.player_gender == "male"
-                else ("Brendans House", "Mays House")
-            )
-            return (
-                "You have no Pokemon yet, and Littleroot will not let you walk north out of town "
-                f"until you have introduced yourself to the new neighbour. {own} is your own "
-                f"home and has nothing left for you. Go into {neighbour}, up to the bedroom on "
-                "the second floor, and talk to the child there."
-            )
-        return (
-            "You have no Pokemon yet. Professor Birch is being attacked on Route 101, straight "
-            "north of Littleroot Town - leave the house and head north to reach his bag."
-        )
-    if not flags.rescued_birch:
-        return "Finish helping Professor Birch, then follow where he leads."
-    if not flags.defeated_rival_route103:
-        if here == MapRSE.ROUTE103.value:
-            hint = (
-                "You are already on Route 103. Your rival is north of you on this route - walk "
-                "the whole way over to him and start the battle."
-            )
-        else:
-            hint = (
-                "Head north out of Littleroot: cross Route 101, pass through Oldale Town, then "
-                "go up Route 103 to find and challenge your rival."
-            )
-        if party_needs_healing(observation.party):
-            hint += (
-                " Your party is hurt - healing for free at the Oldale Town Pokemon Center before "
-                "the rival fight is usually worth it. Pick the Pokemon Center action itself: it "
-                "walks in, heals and comes back out, while walking into the building yourself "
-                "heals nothing."
-            )
-        return hint
-    return ""
+    hint = f"Luna recovery hint: {advice}" if advice else None
+    base = (
+        current_mission()
+        + " Build the immediate objective from the latest relevant dialogue and observed story state. "
+        "Keep that objective across map changes until the game shows it is complete. Use current location, "
+        "recent outcomes, and action labels to choose the action most likely to advance it. When you reach "
+        "a requested location, interact with its relevant person or object before leaving. Check whether the "
+        "expected progress occurred after each action; if it did not, revise your assumption instead of "
+        "repeating the same kind of choice. Do not let the long-term badge goal replace the immediate objective. "
+        "Choose exactly one legal action; probabilities express preferences, not success chances."
+    )
+    return f"{base} {hint}" if hint else base
 
 
 def _opening_actions(observation: Observation, *, suppress_futile: bool = True) -> tuple[Action, ...]:
@@ -315,13 +239,15 @@ def _opening_actions(observation: Observation, *, suppress_futile: bool = True) 
         return action("setup:name", f"Confirm your requested player name: {PLAYER_NAME}")
     if "Task_SetClock_HandleInput" in observation.tasks:
         return action("setup:clock", "Set the opening clock to the default 10:00 AM")
+    if "Task_ViewClock_HandleInput" in observation.tasks:
+        return action("setup:close-clock", "Close the wall clock after viewing the time")
     if observation.game_state != "OVERWORLD":
         return ()
     if observation.menu_phase == "script":
         return action("dialogue:advance", "Advance mandatory opening dialogue (configured nickname: none)")
     if not observation.controllable or observation.position is None:
         return ()
-    if observation.opening_flags.defeated_rival_route103:
+    if configured_target() == "rival" and observation.opening_flags.defeated_rival_route103:
         return ()
     # Every overworld choice from here is Jev's: character creation and forced
     # cutscenes are handled above, and nothing below decides where to go.
@@ -348,10 +274,9 @@ def open_world_actions(observation: Observation, *, suppress_futile: bool = True
     landmarks on the emulator thread, so nothing here touches PokeBot - which
     is also what keeps this testable without an emulator.
 
-    IDs and labels come from static map definitions rather than live object
-    positions, so the offered tuple is byte-identical between frames. A set
-    that churned would fail `_pending_is_stale` on every in-flight request and
-    the run would never commit to an action.
+    Doorway and object IDs remain stable. Loaded NPC labels and distance ranks
+    use their live positions, including story relocations; a pending decision
+    stays valid when the same semantic action IDs remain available.
     """
 
     def act(identifier: str, label: str) -> Action:
@@ -359,13 +284,20 @@ def open_world_actions(observation: Observation, *, suppress_futile: bool = True
 
     choices: list[Action] = []
 
-    # Two exits that land on the same map are the same choice to a player, and
-    # offering both splits Jev's probability mass between identical options.
-    seen_destinations: set[tuple[int, int]] = set()
+    # Adjacent warp tiles can be one doorway, but distant exits onto the same
+    # map are distinct routes (notably the two ends of Petalburg Woods).
+    seen_exits = []
     for exit_ in observation.exits:
-        if exit_.destination_id in seen_destinations:
+        duplicate = any(
+            other.destination_id == exit_.destination_id
+            and other.target_map == exit_.target_map
+            and other.direction == exit_.direction
+            and sum(abs(a - b) for a, b in zip(other.target_coordinates, exit_.target_coordinates)) <= 1
+            for other in seen_exits
+        )
+        seen_exits.append(exit_)
+        if duplicate:
             continue
-        seen_destinations.add(exit_.destination_id)
         group, number = exit_.target_map
         x, y = exit_.target_coordinates
         if exit_.direction:
@@ -401,31 +333,42 @@ def open_world_actions(observation: Observation, *, suppress_futile: bool = True
             label = f"Walk up to and examine the {what} at ({x}, {y})"
         choices.append(act(f"interact:{x}:{y}", label))
 
-    choices.extend(_reachable_heal_actions(observation))
+    from jev_plays_emerald.gameplay import healing_actions, item_actions
+
+    choices.extend(healing_actions(observation))
+    choices.extend(item_actions(observation))
+    if configured_target() == "first-gym":
+        from jev_plays_emerald.training import training_actions
+        choices.extend(training_actions(observation))
 
     futile = recently_futile(observation) if suppress_futile else set()
     usable = [choice for choice in choices if choice.id not in futile]
     # Never empty the menu: a suppressed action beats no action at all.
     choices = usable or choices
 
-    here = observation.position.coordinates if observation.position is not None else (0, 0)
-    ordered = sorted(dict.fromkeys(choices), key=lambda choice: _menu_order(choice, here))
+    ordered = sorted(dict.fromkeys(choices), key=lambda choice: _menu_order(choice, observation))
     return tuple(ordered[:MAX_OPEN_WORLD_ACTIONS])
 
 
-# Ways off this map come first, then people, then whatever is nearest. A
-# crowded route enumerates more landmarks than the menu holds, and ordering by
-# ID alone would drop `walk:` before `interact:` - cutting the exits and
-# leaving Jev nowhere to go.
-MENU_ORDER = {"walk": 0, "heal": 1, "talk": 2, "interact": 3}
+# Keep exits and nearby people together: a gym's distant room doors must not
+# crowd its entrance NPCs out of the bounded menu. Signs come afterward.
+MENU_ORDER = {"walk": 0, "talk": 0, "heal": 0, "field-item": 0, "train": 1, "interact": 2}
 
 
-def _menu_order(choice: Action, here: tuple[int, int]) -> tuple[int, int, str]:
+def _menu_order(choice: Action, observation: Observation) -> tuple[int, int, str]:
     kind, _, rest = choice.id.partition(":")
+    here = observation.position.coordinates if observation.position else (0, 0)
     distance = 0
     if kind == "interact":
         x, y = (int(part) for part in rest.split(":"))
         distance = abs(x - here[0]) + abs(y - here[1])
+    elif kind == "walk":
+        group, number, x, y = (int(part) for part in rest.split(":"))
+        if observation.position and (group, number) == observation.position.map_id:
+            distance = abs(x - here[0]) + abs(y - here[1])
+    elif kind == "talk":
+        npc = next(npc for npc in observation.objects if npc.local_id == int(rest))
+        distance = abs(npc.coordinates[0] - here[0]) + abs(npc.coordinates[1] - here[1])
     return MENU_ORDER.get(kind, len(MENU_ORDER)), distance, choice.id
 
 
@@ -463,34 +406,6 @@ def recently_futile(observation: Observation, threshold: int = FUTILE_ATTEMPTS) 
     # rival run needed nine tries at Birch's bag before one landed.
     repeated = {action for action, count in completions.items() if count >= REPEAT_LIMIT}
     return ((futile | impossible) - succeeded) | repeated
-
-
-# MapRSE.OLDALE_TOWN and MapRSE.ROUTE103, written out so the enumerator stays
-# pure data. `test_heal_map_ids_match_pokebot` pins them to PokeBot's table.
-OLDALE_HEAL_MAPS = frozenset({(0, 10), (0, 18)})
-
-
-def _reachable_heal_actions(observation: Observation) -> tuple[Action, ...]:
-    """Offer a Pokémon Center run when the party needs it and one is walkable.
-
-    The open-world menu otherwise has no way to heal, so a fainted or worn-down
-    party would be stuck. Only Oldale's Center is reachable in the opening; the
-    heal executor walks there and back, so it is offered from the town and the
-    route it borders. Extending this to every visited Center is later work.
-    """
-
-    here = observation.position.map_id if observation.position is not None else None
-    if here not in OLDALE_HEAL_MAPS:
-        return ()
-    if not party_needs_healing(observation.party):
-        return ()
-    return (
-        Action(
-            "heal:oldale",
-            "Restore the party's HP, status and PP at Oldale Pokémon Center",
-            observation.context_id,
-        ),
-    )
 
 
 def _readable_symbol(symbol: str) -> str:

@@ -1,8 +1,18 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { JevError, choose } from './jev.ts'
+import { InvalidResponseDataError } from 'ai'
+import { JevError, choose, asJevError } from './jev.ts'
 
 const state = { game_state: 'OVERWORLD' }
+
+test('malformed provider answers remain distinct from invalid requests', () => {
+  const error = new InvalidResponseDataError({
+    message: 'Question "action" did not select a highest-probability option.',
+    data: { action: { choice: 'talk:1', probabilities: { 'talk:1': 0.1, 'talk:2': 0.9 } } },
+  })
+  assert.equal(asJevError(error, 1000).kind, 'invalid-response')
+  assert.equal(asJevError(new JevError('bad menu', 'invalid'), 1000).kind, 'invalid')
+})
 
 test('an empty menu is refused rather than sent', async () => {
   await assert.rejects(

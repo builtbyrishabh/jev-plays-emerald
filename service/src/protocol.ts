@@ -20,7 +20,7 @@ export type Response =
   | { id: string; type: 'pong'; schemaVersion: number }
   | { id: string; type: 'plan'; hint: string; destinationActionId: string;
       location: string; avoid: string; successSignal: string; model: string; latencyMs: number;
-      usage: { inputTokens: number | undefined; outputTokens: number | undefined } }
+      usage: { inputTokens: number | undefined; outputTokens: number | undefined; cachedInputTokens?: number | undefined } }
   | {
       id: string
       type: 'choice'
@@ -30,7 +30,7 @@ export type Response =
       usage: { inputTokens?: number; outputTokens?: number }
       latencyMs: number
     }
-  | { id: string; type: 'error'; kind: 'timeout' | 'gateway' | 'invalid'; message: string; statusCode?: number }
+  | { id: string; type: 'error'; kind: 'timeout' | 'gateway' | 'invalid' | 'invalid-response'; message: string; statusCode?: number }
 
 /** Reject a malformed line here rather than letting it reach the gateway. */
 export function parseRequest(line: string): Request {

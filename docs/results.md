@@ -1,5 +1,47 @@
 # Emerald opening results
 
+## First-gym extension — 22 September 2026
+
+The application now targets Roxanne's Stone Badge and exposes a local Pokémon
+reference, preparation controls, milestone coaching, and a progress viewer.
+**No autonomous first badge has been demonstrated.** The furthest fresh
+development run reached Petalburg and healed there after beating the rival and
+route trainers. A separate ROM control probe completed Norman and Wally's
+tutorial. Live testing was stopped at the user's request; see
+[first-gym evidence and remaining scope](first-gym.md) for failed runs, fixes,
+and final validation (323 Python tests, 14 ROM subtests, 19 service tests).
+
+## Latest repeated suite — 22 September 2026
+
+Jev plus sparse Luna coaching completed **5/5** fresh attempts, including two
+loss recoveries. Luna-only completed **3/3**; both Jev-only controls completed
+**0/3** within 150 choices. Known tokens per win averaged **148,281** for the
+hybrid and **179,289** for Luna-only; six hybrid failed calls have unknown usage.
+See [the fixed-source repeated results](reliability-results.md) for all attempts,
+accounting, limits and reproducibility. Validation now passes 251 Python tests
+plus seven ROM subtests, TypeScript checking and 18 service tests.
+
+## Earlier development: headless Luna coaching — 22 September 2026
+
+Three fresh hybrid runs completed the rival milestone during the latest
+optimization pass. The two later runs used 50/69 Jev choices and 3/4 Codex Luna
+calls, recording 136,320/198,863 combined tokens. The third run recovered from
+a loss and won normally. A Luna-only comparison also won after two losses,
+using 83 accepted choices, 84 returned calls and 396,955 tokens.
+
+Both an ungrounded Jev-only control and a Jev control with the hybrid's grounded
+facts/memory stopped at 150 choices in the opening houses. Missing failed-call
+usage, small samples, different RNG/starters, and Codex prompt overhead limit
+the comparison. These are measured full-system runs, not bare Luna API savings.
+See [full accounting and post notes](post-notes.md) for exact splits, failed
+pilots, caveats and a suggested post draft, and [benchmark reproduction](benchmark.md).
+
+Final validation: 229 Python tests + 7 ROM subtests, TypeScript checking, and
+18 service tests pass. Whiteout and revisited-clock recovery were also checked
+against real emulator checkpoints with no model calls.
+
+## Earlier measurements
+
 Measured locally on 20 September 2026 using the supported English Emerald ROM, Apple Silicon macOS, the pinned PokéBot/mGBA runtime, and real `typesafe-ai/jev` requests through Vercel AI Gateway.
 
 ## Continuous gameplay
@@ -203,8 +245,11 @@ were accepted and one became stale because the game moved first. It used 10,190
 input and 1,005 output tokens. Jev made 59 model decisions and the runtime made 20
 deterministic setup/dialogue decisions. There were 69 successful actions, 10
 expected interruptions, and no failed executor actions. Jev used 179,932 input
-and 7,784 output tokens, with recorded Jev cost of about **$0.00728**; planner
-cost was not estimated by this project.
+and 7,784 output tokens, with recorded Jev cost of **$0.007557144**; planner
+cost was not estimated by this project. This includes all 62 returned Jev
+responses: 59 accepted and three stale. The earlier $0.00728 figure counted only
+accepted decisions. One additional request has no recorded response, so its
+usage and possible charge are unknown. Luna's totals include its stale response.
 
 The key recovery crossed several maps: Luna first named the lab doorway, Jev took
 it, then the remaining guidance stayed visible long enough for Jev to choose May's
@@ -218,15 +263,14 @@ milestone and demonstrates progress through the rival encounter, not rival
 completion. The loss also left Emerald in a post-battle state with no legal action;
 battle-loss recovery remains separate follow-up work.
 
-The run reused the prior JSON ledger. Its Route 101 dead end was present in the
-brief and was not repeated before meeting May. Review then found that verified
-entries were persisted but omitted from prompts; the final code now exposes them
-to both Jev and Luna, covered by focused tests. That final prompt change was not
-claimed as live cross-run evidence.
+The run reused the prior JSON ledger. Later revisions stopped replaying saved
+routes, dead ends, and verified lessons into model prompts; the current planner
+uses live state, current action attempts, the active objective, and its latest
+accepted advice.
 
 ## Scope limits
 
-This is an opening slice ending at the first rival victory. It does not implement gyms or general Hoenn progression. Catching is exposed when balls and a wild opponent are available, but is not exercised by these opening runs. Jev receives the current structured game state, mission, menu and up to 12 recent outcomes. The optional LLM planner also receives 24 map-scoped attempts and its previous advice; without it the authored hints remain active. Mechanical navigation and mandatory dialogue remain code-driven. See [replaying decisions](replay.md) for the effect of authored hints.
+The historical measurements below concern the opening slice ending at the first rival victory. Current first-gym capabilities and their limits are documented in [first-gym evidence](first-gym.md). Catching is exposed when balls and a wild opponent are available, but is not exercised by these opening runs. Jev receives the current structured game state, mission, menu and up to 12 recent outcomes. The optional LLM planner also receives current action-attempt counts, the active objective, and its previous advice. Mechanical navigation and mandatory dialogue remain code-driven. See [replaying decisions](replay.md) for historical prompt comparisons.
 
 ## Final verification
 

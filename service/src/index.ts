@@ -1,8 +1,11 @@
+import { installCodexShutdownHandlers } from './codex.ts'
 import { createInterface } from 'node:readline'
 import { schemaVersion } from './actions.ts'
 import { JevError, choose } from './jev.ts'
 import { plan } from './planner.ts'
 import { type Request, type Response, parseRequest } from './protocol.ts'
+
+installCodexShutdownHandlers()
 
 /**
  * The decision service. Reads one request per line on stdin and answers on

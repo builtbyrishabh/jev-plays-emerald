@@ -19,6 +19,7 @@ POKEBOT_DIR = CACHE_DIR / "pokebot-gen3"
 POKEBOT_URL = "https://github.com/40Cakes/pokebot-gen3.git"
 POKEBOT_REVISION = "5dd898f830775d448b06db6f5cd65b930540f146"
 POKEBOT_PATCH = PROJECT_ROOT / "patches" / "pokebot-custom-trainer-action.patch"
+PREVIOUS_PATCH_SHA256 = "38a123d0e3e9b0481fb032de1f88955907cf0be976a4d7fa67c3c757894bf272"
 LIBMGBA_TAG = "0.2.0-2"
 LIBMGBA_ARCHIVE = "libmgba-py_0.2.0_macos-arm64.zip"
 LIBMGBA_URL = f"https://github.com/hanzi/libmgba-py/releases/download/{LIBMGBA_TAG}/{LIBMGBA_ARCHIVE}"
@@ -53,6 +54,12 @@ def ensure_pokebot_checkout() -> None:
     if not tracked_status:
         run("git", "apply", str(POKEBOT_PATCH), cwd=POKEBOT_DIR)
     actual_patch = run("git", "diff", "HEAD", "--binary", cwd=POKEBOT_DIR)
+    if hashlib.sha256(actual_patch.encode()).hexdigest() == PREVIOUS_PATCH_SHA256:
+        # Upgrade only our exact previous patch; never discard user edits.
+        subprocess.run(["git", "apply", "--reverse", "-"], cwd=POKEBOT_DIR,
+                       input=actual_patch + "\n", text=True, capture_output=True, check=True)
+        run("git", "apply", str(POKEBOT_PATCH), cwd=POKEBOT_DIR)
+        actual_patch = run("git", "diff", "HEAD", "--binary", cwd=POKEBOT_DIR)
     if actual_patch != expected_patch:
         raise RuntimeError("PokéBot checkout has tracked changes other than the required trainer-action patch")
     if not (POKEBOT_DIR / "LICENSE").is_file():

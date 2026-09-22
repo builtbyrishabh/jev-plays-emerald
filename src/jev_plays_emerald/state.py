@@ -6,7 +6,8 @@ import hashlib
 import json
 import threading
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -104,6 +105,7 @@ class PartyMember:
     max_hp: int
     status: str
     moves: tuple[MoveState, ...]
+    is_egg: bool = False
 
 
 @dataclass(frozen=True)
@@ -132,12 +134,21 @@ class InventoryItem:
 
 
 @dataclass(frozen=True)
+class ShopItem:
+    name: str
+    price: int
+
+
+@dataclass(frozen=True)
 class OpeningFlags:
     rescued_birch: bool
     received_pokedex: bool
     defeated_rival_route103: bool
     set_wall_clock: bool = False
     rival_left_for_route103: bool = False
+    stone_badge: bool = False
+    petalburg_tutorial: bool = False
+    devon_goods_saved: bool = False
 
 
 @dataclass(frozen=True)
@@ -174,6 +185,12 @@ class Observation:
     objects: tuple[MapObject, ...] = ()
     signs: tuple[MapSign, ...] = ()
     recent_dialogue: tuple[str, ...] = ()
+    money: int = 0
+    shop_items: tuple[ShopItem, ...] = ()
+    learning_move: MoveState | None = None
+    learning_party_index: int | None = None
+    tutorial_battle: bool = False
+    training_spots: tuple[tuple[int, int], ...] = ()
 
 
 def observation_context_id(
@@ -187,6 +204,7 @@ def observation_context_id(
     active_battler: ActiveBattler | None = None,
     opponent: OpponentBattler | None = None,
     recent_dialogue: tuple[str, ...] = (),
+    menu_details: tuple = (),
 ) -> str:
     """Identify a decision situation without changing for movement animation frames."""
 
@@ -201,6 +219,7 @@ def observation_context_id(
         "active_battler": active_battler,
         "opponent": opponent,
         "recent_dialogue": recent_dialogue,
+        "menu_details": menu_details,
     }
     encoded = json.dumps(payload, default=lambda value: value.__dict__, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode()).hexdigest()[:16]
@@ -216,6 +235,7 @@ class ObservationReader:
         # knows whether it is running asks for them.
         self.landmarks = landmarks
         self._dialogue = DialogueMemory()
+        self._last_observation: Observation | None = None
 
     def read(self, recent_outcomes: tuple[RecentOutcome, ...] = ()) -> Observation:
         if threading.get_ident() != self._owner_thread:
@@ -228,22 +248,26 @@ class ObservationReader:
         from modules.pokemon_party import get_party
 
         state = get_game_state()
-        if state is None:
-            # The real launcher can enter the mode before Emerald's first frame.
-            # Save blocks and task memory are not safe to decode at that point.
-            return Observation(
-                context_id="boot:unknown",
-                game_state="UNKNOWN",
-                position=None,
-                controllable=False,
-                menu_phase="none",
-                battle_phase="none",
-                party=(),
-                inventory=(),
-                opening_flags=OpeningFlags(False, False, False),
-                active_battler=None,
-                recent_outcomes=tuple(recent_outcomes),
-            )
+        # Emerald temporarily clears its relocatable save pointers during some
+        # transitions. Upstream returns zero bytes then; those are not evidence
+        # that badges/story milestones (or the player's inventory) were lost.
+        # CHANGE_MAP/UNKNOWN can also expose partially rebuilt save data with
+        # non-null pointers. Defer new facts until a coherent game state returns.
+        pointers_ready = state not in {None, GameState.CHANGE_MAP, GameState.UNKNOWN} and all(
+            int.from_bytes(read_symbol(f"gSaveBlock{number}Ptr", size=4), "little") != 0
+            for number in (1, 2)
+        )
+        if not pointers_ready:
+            previous = self._last_observation
+            if previous is None:
+                previous = Observation("boot:unknown", "UNKNOWN", None, False, "none", "none", (), (),
+                                       OpeningFlags(False, False, False), None, ())
+            return replace(previous, context_id="transition:unavailable", game_state=state.name if state else "UNKNOWN",
+                           position=None, controllable=False, menu_phase="none", battle_phase="none",
+                           active_battler=None, opponent=None, trainer_id=None, can_run=False,
+                           tasks=tuple(task.symbol for task in get_tasks()) if state is not None else (), scripts=(),
+                           exits=(), objects=(), signs=(), shop_items=(), training_spots=(), tutorial_battle=False,
+                           learning_move=None, learning_party_index=None, recent_outcomes=tuple(recent_outcomes))
         game_state = state.name
         position = None
         if state in {GameState.OVERWORLD, GameState.CHANGE_MAP, GameState.BATTLE_STARTING, GameState.BATTLE}:
@@ -260,7 +284,7 @@ class ObservationReader:
                 position = None
 
         menu_phase, battle_phase = _read_phases(state)
-        if menu_phase == "script":
+        if menu_phase in {"script", "yes_no"}:
             from modules.game import decode_string
             from modules.text_printer import get_text_printer
 
@@ -282,6 +306,7 @@ class ObservationReader:
                     for move in pokemon.moves
                     if move is not None
                 ),
+                is_egg=pokemon.is_egg,
             )
             for pokemon in get_party()
         )
@@ -297,15 +322,21 @@ class ObservationReader:
             defeated_rival_route103=get_event_flag("DEFEATED_RIVAL_ROUTE103"),
             set_wall_clock=get_event_flag("SET_WALL_CLOCK"),
             rival_left_for_route103=get_event_flag("RIVAL_LEFT_FOR_ROUTE103"),
+            stone_badge=get_event_flag("BADGE01_GET"),
+            petalburg_tutorial=get_event_var("PETALBURG_GYM_STATE") >= 2,
+            devon_goods_saved=get_event_var("PETALBURG_WOODS_STATE") == 1,
         )
         active_battler = None
         opponent = None
         trainer_id = None
         can_run = False
+        tutorial_battle = False
         if state is GameState.BATTLE:
             from modules.battle_state import get_battle_state
 
             battle_state = get_battle_state()
+            from modules.battle_state import BattleType
+            tutorial_battle = BattleType.WallyTutorial in battle_state.type
             if battle_state.is_trainer_battle:
                 trainer_id = unpack_uint16(read_symbol("gTrainerBattleOpponent_A", size=2))
             if battle_phase == "action" and battle_state.own_side.active_battler is not None:
@@ -330,6 +361,14 @@ class ObservationReader:
                     opponent_battler.total_hp,
                     opponent_battler.status_permanent.name,
                 )
+        money = get_player().money
+        shop_items = ()
+        if menu_phase == "shop":
+            from modules.mart import get_mart_buyable_items
+            shop_items = tuple(ShopItem(item.name, item.price) for item in get_mart_buyable_items())
+        learning_move, learning_party_index = _read_learning_move(menu_phase)
+        controllable = player_avatar_is_controllable() if state is GameState.OVERWORLD else False
+        landmarks = _read_landmarks(position if controllable and self.landmarks else None)
         context_id = observation_context_id(
             game_state,
             position.map_id if position is not None else None,
@@ -341,9 +380,9 @@ class ObservationReader:
             active_battler,
             opponent,
             self._dialogue.messages,
+            (money, shop_items, learning_move, learning_party_index, landmarks.get("training_spots", ())),
         )
-        controllable = player_avatar_is_controllable() if state is GameState.OVERWORLD else False
-        return Observation(
+        observation = Observation(
             context_id,
             game_state,
             position,
@@ -364,8 +403,15 @@ class ObservationReader:
             lab_state=get_event_var("BIRCH_LAB_STATE"),
             player_gender=get_player().gender,
             recent_dialogue=self._dialogue.messages,
-            **_read_landmarks(position if controllable and self.landmarks else None),
+            money=money,
+            shop_items=shop_items,
+            learning_move=learning_move,
+            learning_party_index=learning_party_index,
+            tutorial_battle=tutorial_battle,
+            **landmarks,
         )
+        self._last_observation = observation
+        return observation
 
 
 # Emerald marks a warp whose destination a script fills in at runtime by
@@ -375,7 +421,7 @@ DYNAMIC_WARP = (127, 127)
 
 
 def _read_landmarks(position: MapPosition | None) -> dict[str, tuple]:
-    """Read the current map's static landmarks on the emulator owner thread.
+    """Read map landmarks and loaded NPC positions on the emulator owner thread.
 
     Everything the option enumerator needs about where it can go and who it can
     talk to becomes plain data here, so the enumerator itself never calls
@@ -419,8 +465,8 @@ def _read_landmarks(position: MapPosition | None) -> dict[str, tuple]:
             neighbour = connection.destination_map
             key = tuple(neighbour.map_group_and_number)
             name = _map_name(key, neighbour.map_name)
-            target = _border_tile(
-                connection.direction, connection.offset, location.map_size, neighbour.map_size
+            target = _reachable_border_tile(
+                position, connection.direction, connection.offset, location.map_size, neighbour.map_size, key
             )
         except (RuntimeError, ValueError, IndexError):
             continue
@@ -428,7 +474,7 @@ def _read_landmarks(position: MapPosition | None) -> dict[str, tuple]:
             continue
         exits.append(MapExit(key, target, key, name, connection.direction))
 
-    loaded = {npc.local_id for npc in get_map_objects()}
+    loaded = {npc.local_id: npc for npc in get_map_objects()}
     objects: list[MapObject] = []
     for template in location.objects:
         # A clone template is a second copy of an object that is already offered.
@@ -450,7 +496,7 @@ def _read_landmarks(position: MapPosition | None) -> dict[str, tuple]:
         objects.append(
             MapObject(
                 template.local_id,
-                tuple(template.local_coordinates),
+                tuple(loaded[template.local_id].current_coords) if template.local_id in loaded else tuple(template.local_coordinates),
                 template.script_symbol,
                 template.trainer_type,
                 defeated,
@@ -471,34 +517,48 @@ def _read_landmarks(position: MapPosition | None) -> dict[str, tuple]:
             symbol = event.script_symbol
         signs.append(MapSign(tuple(event.local_coordinates), event.kind, symbol, hidden_item))
 
-    return {"exits": tuple(exits), "objects": tuple(objects), "signs": tuple(signs)}
+    from .training import training_spots
+    return {"exits": tuple(exits), "objects": tuple(objects), "signs": tuple(signs),
+            "training_spots": training_spots(position)}
 
 
-def _border_tile(
+@lru_cache(maxsize=256)
+def _reachable_border_tile(
+    position: MapPosition,
     direction: str,
     offset: int,
     here_size: tuple[int, int],
     there_size: tuple[int, int],
+    destination_map: tuple[int, int],
 ) -> tuple[int, int] | None:
-    """The tile just across a map edge, in the middle of the shared border.
+    """Choose a reachable crossing, checking the shared border center first.
 
-    Aiming at the middle of the neighbour instead looks equivalent and is not:
-    Route 103's middle is across water, so "travel north" out of Oldale could
-    not be pathed at all and was dropped from the menu as impossible. The
-    crossing is what the choice actually means, and it is always walkable.
-
-    Dive and Emerge connections are not edges you can walk over, so they are
-    not offered at all.
+    Cache by map and avatar tile to avoid repeating pathfinding every frame.
+    Invalid transitional coordinates raise, so they are never cached as a
+    permanently unreachable exit. Moving NPCs are rechecked by navigation.
     """
+    from modules.map_path import calculate_path, PathFindingError
 
     here_width, here_height = here_size
     width, height = there_size
+    if not (0 <= position.coordinates[0] < here_width and 0 <= position.coordinates[1] < here_height):
+        raise ValueError("transitional avatar coordinates")
     if direction in {"North", "South"}:
-        shared = (max(0, offset) + min(here_width, offset + width)) // 2 - offset
-        return shared, (height - 1 if direction == "North" else 0)
-    if direction in {"East", "West"}:
-        shared = (max(0, offset) + min(here_height, offset + height)) // 2 - offset
-        return (width - 1 if direction == "West" else 0), shared
+        start, stop = max(0, offset), min(here_width, offset + width)
+        targets = [(value - offset, height - 1 if direction == "North" else 0) for value in range(start, stop)]
+    elif direction in {"East", "West"}:
+        start, stop = max(0, offset), min(here_height, offset + height)
+        targets = [(width - 1 if direction == "West" else 0, value - offset) for value in range(start, stop)]
+    else:
+        return None
+    midpoint = len(targets) // 2
+    for index in sorted(range(len(targets)), key=lambda candidate: abs(candidate - midpoint)):
+        target = targets[index]
+        try:
+            calculate_path((position.map_id, position.coordinates), (destination_map, target), no_surfing=True)
+        except PathFindingError:
+            continue
+        return target
     return None
 
 
@@ -534,6 +594,22 @@ def _move_state(move: object, *, usable: bool = True) -> MoveState:
 
 def _read_phases(game_state: object) -> tuple[str, str]:
     from modules.memory import GameState
+    from modules.tasks import task_is_active
+    from modules.battle_move_replacing import get_learn_move_state, LearnMoveState
+
+    if game_state in {GameState.BATTLE, GameState.EVOLUTION, GameState.POKEMON_SUMMARY_SCREEN, GameState.PARTY_MENU}:
+        if get_learn_move_state() in {LearnMoveState.AskWhetherToLearn, LearnMoveState.SelectMoveToReplace, LearnMoveState.ConfirmCancellation}:
+            return "learn_move", "none"
+    if task_is_active("Task_EvolutionScene"):
+        return "evolution", "none"
+    if task_is_active("Task_ShopMenu"):
+        return "shop", "none"
+    if task_is_active("Task_HandleYesNoInput"):
+        return "yes_no", "none"
+    if game_state is GameState.PARTY_MENU:
+        from modules.battle_state import battle_is_active, get_battle_state
+        if battle_is_active() and get_battle_state().own_side.is_fainted:
+            return "forced_switch", "none"
 
     if game_state is GameState.BATTLE:
         from modules.menu_parsers import get_battle_menu
@@ -554,3 +630,23 @@ def _read_phases(game_state: object) -> tuple[str, str]:
     if game_state in {GameState.BAG_MENU, GameState.PARTY_MENU, GameState.POKEMON_SUMMARY_SCREEN}:
         return game_state.name.casefold(), "none"
     return "none", "none"
+
+
+def _read_learning_move(menu_phase: str) -> tuple[MoveState | None, int | None]:
+    if menu_phase != "learn_move":
+        return None, None
+    from modules.memory import read_symbol, unpack_uint16
+    from modules.pokemon import get_move_by_index
+    from modules.battle_state import get_battle_state
+    from modules.menu_parsers import get_party_menu_cursor_pos
+    from modules.pokemon_party import get_party_size
+    from modules.tasks import task_is_active
+
+    if task_is_active("Task_HandleReplaceMoveYesNoInput"):
+        data = get_party_menu_cursor_pos(get_party_size())
+        move = get_move_by_index(data["data1"])
+        index = data["slot_id"]
+    else:
+        move = get_move_by_index(unpack_uint16(read_symbol("gMoveToLearn", size=2)))
+        index = get_battle_state().map_battle_party_index(read_symbol("gBattleStruct", 16, 1)[0])
+    return MoveState(move.name, move.pp, move.pp, move.type.name, move.base_power, move.accuracy, move.description), index

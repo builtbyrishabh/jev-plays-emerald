@@ -1,10 +1,19 @@
 from dataclasses import replace
 
+import pytest
+
 from jev_plays_emerald.actions import Action, Outcome
 from jev_plays_emerald.jev import TokenUsage
 from jev_plays_emerald.planner import PlannerAdvice, PlannerMemory
 from jev_plays_emerald.planner_memory import EvidenceLedger
-from jev_plays_emerald.state import MapPosition, Observation, OpeningFlags
+from jev_plays_emerald.state import (
+    InventoryItem,
+    MapPosition,
+    MoveState,
+    Observation,
+    OpeningFlags,
+    PartyMember,
+)
 
 
 def observation(map_id=(1, 3), **changes):
@@ -79,6 +88,23 @@ def test_battle_and_forced_dialogue_never_trigger_repetition(tmp_path):
     assert memory.reason(obs) is None
 
 
+@pytest.mark.parametrize("changes", [
+    {"game_state": "BATTLE", "battle_phase": "action"},
+    {"game_state": "CHOOSE_STARTER", "menu_phase": "starter"},
+    {"controllable": False},
+    {"menu_phase": "script"},
+    {"menu_phase": "start"},
+    {"battle_phase": "action"},
+])
+def test_navigation_correction_waits_for_overworld_control(tmp_path, changes):
+    obs = observation()
+    memory = PlannerMemory(ledger=EvidenceLedger(tmp_path / "memory.json"))
+    for _ in range(3):
+        record(memory, obs, outcome=Outcome.INTERRUPTED)
+    assert memory.reason(replace(obs, **changes)) is None
+    assert memory.reason(obs) == "three repeated attempts without story progress"
+
+
 def test_decision_brief_counts_failed_choices_and_keeps_other_maps_separate(tmp_path):
     obs = observation((0, 9), player_gender="male")
     memory = PlannerMemory(ledger=EvidenceLedger(tmp_path / "memory.json"))
@@ -93,8 +119,7 @@ def test_decision_brief_counts_failed_choices_and_keeps_other_maps_separate(tmp_
     brief = memory.decision_brief(obs, (north,), None)
     other_brief = memory.decision_brief(other_map, (north,), None)
 
-    assert "Brendan is the player; May is the rival." in brief["confirmed_facts"]
-    assert "May's House is the neighbor's house." in brief["confirmed_facts"]
+    assert "confirmed_facts" not in brief
     assert brief["legal_actions"][0]["attempts_without_progress"] == 3
     assert brief["legal_actions"][0]["last_result"] == "NeedPokemonTrigger"
     assert other_brief["legal_actions"][0]["attempts_without_progress"] == 0
@@ -116,13 +141,12 @@ def test_successful_travel_can_trigger_help_without_becoming_a_dead_end(tmp_path
     assert EvidenceLedger(path).summary("meet_neighbor", (1, 4))["dead_ends"] == []
     assert memory.decision_brief(obs, (exit_lab,), None)["legal_actions"][0] == {
         "action_id": exit_lab.id,
-        "label": exit_lab.label,
         "attempts_without_progress": 3,
         "last_result": "success",
     }
 
 
-def test_brief_includes_exact_validated_planner_destination(tmp_path):
+def test_brief_exposes_lunas_grounded_recovery_hint_to_jev(tmp_path):
     action = Action("walk:0:9:14:8", "Enter May's House at (14, 8)", "ctx")
     planner_advice = PlannerAdvice(
         hint="Meet May upstairs.",
@@ -139,11 +163,90 @@ def test_brief_includes_exact_validated_planner_destination(tmp_path):
         ledger=EvidenceLedger(tmp_path / "m.json")
     ).decision_brief(observation((0, 9)), (action,), planner_advice)
 
-    assert brief["planner_hint"]["location"] == "May's House entrance at (14, 8)"
-    assert planner_advice.text.startswith("Hint: Meet May upstairs.")
+    assert brief["planner_hint"] == planner_advice.guidance
+    follow_up = PlannerMemory(
+        ledger=EvidenceLedger(tmp_path / "follow-up.json")
+    ).decision_brief(observation((0, 9)), (action,), None, planner_advice)
+    assert follow_up["planner_follow_up"] == {
+        "hint": planner_advice.hint,
+        "avoid": planner_advice.avoid,
+        "success_signal": planner_advice.success_signal,
+        "status": "first_action_completed",
+    }
+    assert "Exact location: May's House entrance at (14, 8)" in planner_advice.text
+    assert "Avoid: Do not retry Route 101" in planner_advice.text
+    assert "Success looks like: rival_house_state changes" in planner_advice.text
 
 
-def test_brief_reuses_cross_run_dead_ends(tmp_path):
+def test_general_stall_requests_help_without_repeating_one_action(tmp_path):
+    memory = PlannerMemory(ledger=EvidenceLedger(tmp_path / "memory.json"))
+    obs = observation((0, 10))
+    memory.sync_progress(obs)
+
+    for index in range(7):
+        record(memory, obs, action_id=f"walk:{index}")
+        assert memory.reason(obs) is None
+    record(memory, obs, action_id="walk:7")
+
+    assert memory.reason(obs) == "eight decisions without story progress"
+
+
+@pytest.mark.parametrize("progress", ["map", "party", "inventory", "money"])
+def test_useful_travel_and_preparation_reset_general_stall(tmp_path, progress):
+    memory = PlannerMemory(ledger=EvidenceLedger(tmp_path / "memory.json"))
+    obs = observation((0, 10))
+    memory.sync_progress(obs)
+    for index in range(7):
+        record(memory, obs, action_id=f"walk:{index}")
+
+    move = MoveState("Pound", 35, 35)
+    member = PartyMember("Treecko", 6, 20, 20, "Healthy", (move,))
+    changes = {
+        "map": {"position": MapPosition((0, 11), (1, 2), "Up")},
+        "party": {"party": (member,)},
+        "inventory": {"inventory": (InventoryItem("Potion", 1),)},
+        "money": {"money": 100},
+    }[progress]
+    advanced = replace(obs, **changes)
+
+    record(memory, obs, advanced, action_id="prepare")
+    assert memory.reason(advanced) is None
+
+    record(memory, advanced, action_id="next")
+    assert memory.reason(advanced) is None
+
+
+def test_planner_context_contains_no_walkthrough_or_saved_route_instructions(tmp_path):
+    memory = PlannerMemory(ledger=EvidenceLedger(tmp_path / "memory.json"))
+    obs = observation()
+    context = memory.planner_context(obs, (), None)
+    brief = memory.decision_brief(obs, (), None)
+
+    assert "walkthroughKnowledge" not in context
+    assert "verifiedLessons" not in context
+    assert "rememberedPlan" not in context
+    assert "currentGoal" not in context
+    assert context["currentObjective"] == "meet May, the rival"
+    assert context["rivalName"] == "May"
+    assert "observedRoutes" not in context
+    assert "deadEnds" not in context
+    assert "current_goal" not in brief
+    assert "observed_routes" not in brief
+    assert "avoid_repeating" not in brief
+
+
+def test_luna_context_tracks_the_other_rival_identity(tmp_path):
+    memory = PlannerMemory(ledger=EvidenceLedger(tmp_path / "memory.json"))
+
+    context = memory.planner_context(
+        observation(player_gender="female"), (), None
+    )
+
+    assert context["currentObjective"] == "meet Brendan, the rival"
+    assert context["rivalName"] == "Brendan"
+
+
+def test_brief_does_not_replay_cross_run_dead_ends(tmp_path):
     path = tmp_path / "m.json"
     EvidenceLedger(path).record_dead_end(
         "meet_neighbor", (1, 4), "talk:1", "Talk to Aide", "no story progress", 3
@@ -152,10 +255,10 @@ def test_brief_reuses_cross_run_dead_ends(tmp_path):
 
     brief = memory.decision_brief(observation((1, 4)), (), None)
 
-    assert brief["avoid_repeating"][0]["action_id"] == "talk:1"
+    assert "avoid_repeating" not in brief
 
 
-def test_brief_sends_verified_cross_run_lessons_to_both_models(tmp_path):
+def test_brief_does_not_replay_verified_route_instructions_to_models(tmp_path):
     path = tmp_path / "m.json"
     ledger = EvidenceLedger(path)
     ledger.record_hypothesis(
@@ -170,8 +273,8 @@ def test_brief_sends_verified_cross_run_lessons_to_both_models(tmp_path):
     brief = memory.decision_brief(obs, (), None)
     planner_context = memory.planner_context(obs, (), None)
 
-    assert brief["verified_lessons"][0]["action_id"] == "interact:5:1"
-    assert planner_context["verifiedLessons"] == brief["verified_lessons"]
+    assert "verified_lessons" not in brief
+    assert "verifiedLessons" not in planner_context
 
 
 def test_only_a_followed_hint_is_verified_on_story_progress(tmp_path):

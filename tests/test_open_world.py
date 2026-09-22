@@ -10,7 +10,6 @@ import pytest
 from jev_plays_emerald.actions import ACTION_EXECUTORS
 from jev_plays_emerald.opening import (
     MAX_OPEN_WORLD_ACTIONS,
-    OLDALE_HEAL_MAPS,
     legal_actions,
     open_world_actions,
 )
@@ -118,6 +117,18 @@ def test_a_distant_person_is_reached_by_walking_to_their_tile():
     offered = {a.id: a.label for a in open_world_actions(observation(objects=(rival,)))}
     assert offered["interact:10:3"] == "Walk all the way over to Rival at (10, 3)"
     assert "talk:2" not in offered
+
+
+def test_gym_room_doors_do_not_crowd_norman_out_of_the_menu():
+    gym = (8, 1)
+    doors = tuple(MapExit(gym, (1, y), gym, "Petalburg City Gym") for y in range(1, 106, 3))
+    state = observation(position=MapPosition(gym, (4, 111), "Up"),
+                        exits=doors + (MapExit(gym, (4, 111), (0, 0), "Petalburg City"),),
+                        objects=(MapObject(1, (4, 108), "PetalburgCity_Gym_EventScript_Norman"),), signs=())
+    offered = {a.id for a in open_world_actions(state)}
+    assert "talk:1" in offered
+    assert "walk:8:1:4:111" in offered
+    assert "walk:8:1:1:1" not in offered
 
 
 def test_identical_destinations_are_offered_once():
@@ -237,8 +248,11 @@ def test_heal_map_ids_match_pokebot():
     """The enumerator carries these as data; PokéBot's table stays the source."""
 
     from modules.map_data import MapRSE
+    from jev_plays_emerald.gameplay import CENTER_MAPS
 
-    assert OLDALE_HEAL_MAPS == {MapRSE.OLDALE_TOWN.value, MapRSE.ROUTE103.value}
+    assert CENTER_MAPS["oldale"] == {MapRSE.OLDALE_TOWN.value, MapRSE.ROUTE103.value, MapRSE.OLDALE_TOWN_POKEMON_CENTER_1F.value}
+    assert CENTER_MAPS["petalburg"] == {MapRSE.PETALBURG_CITY.value, MapRSE.PETALBURG_CITY_POKEMON_CENTER_1F.value}
+    assert CENTER_MAPS["rustboro"] == {MapRSE.RUSTBORO_CITY.value, MapRSE.RUSTBORO_CITY_POKEMON_CENTER_1F.value}
 
 
 # --- the reader that feeds the enumerator ------------------------------------
@@ -321,7 +335,9 @@ def install(monkeypatch, location, loaded_ids=(), hidden_flags=()):
     from modules import map as map_module
     from modules import memory as memory_module
 
-    loaded = [type("Obj", (), {"local_id": i})() for i in loaded_ids]
+    from jev_plays_emerald import training
+    monkeypatch.setattr(training, "training_spots", lambda _: ())
+    loaded = [type("Obj", (), {"local_id": i, "current_coords": next(obj.local_coordinates for obj in location.objects if obj.local_id == i)})() for i in loaded_ids]
     monkeypatch.setattr(map_module, "get_map_data_for_current_position", lambda: location, raising=False)
     monkeypatch.setattr(map_module, "get_map_objects", lambda: loaded, raising=False)
     monkeypatch.setattr(
@@ -372,6 +388,10 @@ def test_reader_refuses_to_name_a_dynamic_warp(monkeypatch):
 def test_reader_targets_the_tile_just_across_a_map_edge(monkeypatch):
     """Oldale's middle-of-Route-103 target was across water and unpathable."""
 
+    from modules import map_path
+    from jev_plays_emerald.state import _reachable_border_tile
+    _reachable_border_tile.cache_clear()
+    monkeypatch.setattr(map_path, "calculate_path", lambda *args, **kwargs: [])
     location = FakeLocation(connections=[FakeConnection("North", ROUTE103, size=(20, 30))])
     exit_ = install(monkeypatch, location)["exits"][0]
     assert exit_.target_map == ROUTE103
@@ -405,8 +425,7 @@ def test_the_mode_reads_the_landmarks_the_menu_is_built_from():
     assert JevEmeraldMode()._observation_reader.landmarks is True
 
 
-def test_the_truck_hint_does_not_talk_about_the_house():
-    """Before the clock, Jev is in a truck, not in the bedroom it was sent to."""
+def test_prompt_does_not_add_authored_route_hints():
 
     from modules.map_data import MapRSE
 
@@ -417,67 +436,64 @@ def test_the_truck_hint_does_not_talk_about_the_house():
         party=(),
         opening_flags=OpeningFlags(False, False, False),
     )
-    hint = decision_instructions(truck)
-    assert "moving truck" in hint
-    assert "bedroom" not in hint
+    instructions = decision_instructions(truck)
+    assert "moving truck" not in instructions
+    assert "bedroom" not in instructions
 
     house = replace(truck, position=MapPosition((1, 0), (8, 7), "Up"))
-    assert "wall clock" in decision_instructions(house)
+    assert "wall clock" not in decision_instructions(house)
 
 
-def test_authored_hints_can_be_disabled_for_dialogue_only_play():
-    from modules.map_data import MapRSE
-
-    from jev_plays_emerald.opening import MISSION, decision_instructions
-
-    truck = observation(
-        position=MapPosition(MapRSE.INSIDE_OF_TRUCK.value, (1, 1), "Up"),
-        party=(),
-        recent_dialogue=("We need to set the clock upstairs.",),
-        opening_flags=OpeningFlags(False, False, False),
-    )
-
-    instructions = decision_instructions(truck, authored_hints=False)
-
-    assert instructions.startswith(MISSION)
-    assert "moving truck" not in instructions
-    assert "wall clock" not in instructions
-
-
-def test_general_mission_puts_the_starter_inside_birchs_rescue():
+def test_rival_mission_states_the_goal_without_an_authored_route():
     from jev_plays_emerald.opening import MISSION
 
-    assert "find and rescue Professor Birch, choosing a starter" in MISSION
-    assert "get a starter Pokemon, rescue Professor Birch" not in MISSION
+    assert MISSION == "Goal: defeat your rival on Route 103."
+    assert "Birch" not in MISSION
+    assert "travel north" not in MISSION
 
 
-def test_the_hint_stops_routing_you_once_you_have_arrived():
-    """Standing on Route 103, "pass through Oldale" sent Jev back south."""
-
-    from modules.map_data import MapRSE
-
+def test_first_gym_prompt_focuses_jev_on_the_immediate_objective(monkeypatch):
     from jev_plays_emerald.opening import decision_instructions
 
-    arrived = observation(
-        position=MapPosition(MapRSE.ROUTE103.value, (10, 21), "Up", "Route103"),
-        opening_flags=OpeningFlags(True, False, False, set_wall_clock=True),
-    )
-    assert "already on Route 103" in decision_instructions(arrived)
-    on_the_way = replace(arrived, position=MapPosition(MapRSE.OLDALE_TOWN.value, (10, 10), "Up"))
-    assert "pass through Oldale Town" in decision_instructions(on_the_way)
-
-
-def test_the_hint_sends_you_to_the_neighbour_before_north():
-    """Littleroot's north tiles push you back until the neighbour is met."""
-
-    from jev_plays_emerald.opening import decision_instructions
-
-    town = observation(
-        position=MapPosition((0, 9), (10, 9), "Up"),
-        party=(),
+    monkeypatch.setenv("JEV_TARGET", "first-gym")
+    state = observation(
+        recent_dialogue=("Go introduce yourself to our new neighbour.",),
         opening_flags=OpeningFlags(False, False, False, set_wall_clock=True),
     )
-    hint = decision_instructions(town)
-    assert "Go into Mays House" in hint  # the boy's neighbour, not his own home
-    assert "Go into Brendans House" in decision_instructions(replace(town, player_gender="female"))
-    assert "neighbour" not in decision_instructions(replace(town, rival_house_state=3))
+
+    instructions = decision_instructions(state)
+
+    assert instructions.startswith("Goal: earn the Stone Badge.")
+    assert "Build the immediate objective from the latest relevant dialogue" in instructions
+    assert "immediate objective" in instructions
+    assert "Keep that objective across map changes" in instructions
+    assert "Check whether the expected progress occurred" in instructions
+    assert "interact with its relevant person or object before leaving" in instructions
+    assert "Choose your starter, rescue Birch" not in instructions
+    assert "neighbor's house" not in instructions
+    assert "May's House" not in instructions
+    assert "Route 101" not in instructions
+
+
+def test_luna_advice_becomes_jev_current_objective(monkeypatch):
+    from jev_plays_emerald.opening import decision_instructions
+
+    monkeypatch.setenv("JEV_TARGET", "first-gym")
+    instructions = decision_instructions(
+        observation(recent_dialogue=("Old dialogue that may no longer apply.",)),
+        advice="Go upstairs and inspect the Poke Ball.",
+    )
+
+    assert "Luna recovery hint: Go upstairs and inspect the Poke Ball." in instructions
+    assert "Current objective from Luna" not in instructions
+
+
+def test_reader_uses_loaded_npc_position_after_script_relocation(monkeypatch):
+    from modules import map as map_module
+    from jev_plays_emerald import training
+    location = FakeLocation(objects=[FakeTemplate(local_id=1, local_coordinates=(4, 2))])
+    monkeypatch.setattr(map_module, 'get_map_data_for_current_position', lambda: location)
+    monkeypatch.setattr(map_module, 'get_map_objects', lambda: [type('Obj', (), {'local_id': 1, 'current_coords': (4, 107)})()])
+    monkeypatch.setattr(training, 'training_spots', lambda _: ())
+    objects = _read_landmarks(MapPosition(HERE, (1, 106), 'Up'))['objects']
+    assert objects[0].coordinates == (4, 107)

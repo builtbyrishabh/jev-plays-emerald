@@ -62,7 +62,7 @@ CHOICE = """
                     "choice": "talk:1",
                     "probabilities": {"walk:0:10:5:3": 0.25, "talk:1": 0.75},
                     "confidence": 0.8,
-                    "usage": {"inputTokens": 1200, "outputTokens": 40},
+                    "usage": {"inputTokens": 1200, "outputTokens": 40, "cachedInputTokens": 900},
                 })
 """
 
@@ -86,7 +86,7 @@ def test_planner_transport_validates_exact_location_and_keeps_usage_separate(tmp
                "avoid": "Do not talk to Mom again.",
                "successSignal": "The map changes.",
                "model": "test/model", "latencyMs": 12,
-               "usage": {"inputTokens": 100, "outputTokens": 20}})
+               "usage": {"inputTokens": 100, "outputTokens": 20, "cachedInputTokens": 80}})
     '''
     client = service(tmp_path, body)
     try:
@@ -95,6 +95,7 @@ def test_planner_transport_validates_exact_location_and_keeps_usage_separate(tmp
         assert result.destination_action_id == "walk:0:10:5:3"
         assert result.location == "The offered doorway at (5, 3)"
         assert result.usage.input_tokens == 100
+        assert result.usage.cached_input_tokens == 80
     finally:
         client.close()
 
@@ -148,6 +149,7 @@ def test_a_choice_round_trips_with_its_distribution(tmp_path):
         assert result.probabilities["talk:1"] == 0.75
         assert result.confidence == 0.8
         assert result.usage.input_tokens == 1200
+        assert result.usage.cached_input_tokens == 900
         assert result.latency_ms > 0
     finally:
         client.close()

@@ -18,3 +18,6 @@ from jev_plays_emerald import telemetry
 @pytest.fixture(autouse=True)
 def isolated_run_log(tmp_path, monkeypatch):
     monkeypatch.setattr(telemetry, "RUN_LOG", tmp_path / "decisions.jsonl")
+    # Legacy opening fixtures keep their original target. Journey tests select
+    # first-gym explicitly, and the normal app defaults to first-gym.
+    monkeypatch.setenv("JEV_TARGET", "rival")

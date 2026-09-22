@@ -39,6 +39,7 @@ from jev_plays_emerald.state import (
     OpponentBattler,
     PartyMember,
     RecentOutcome,
+    ShopItem,
 )
 from jev_plays_emerald.telemetry import JEV_INPUT_USD_PER_TOKEN
 
@@ -58,6 +59,8 @@ class Situation:
     recorded_probabilities: dict[str, float] = field(default_factory=dict)
     recorded_input_tokens: int | None = None
     occurrences: int = 1
+    recorded_output_tokens: int | None = None
+    recorded_cached_input_tokens: int | None = None
 
     @property
     def map_id(self) -> tuple[int, int] | None:
@@ -73,6 +76,8 @@ class Answer:
     probabilities: dict[str, float]
     input_tokens: int | None
     error: str | None = None
+    output_tokens: int | None = None
+    cached_input_tokens: int | None = None
 
 
 def read_situations(path: Path) -> list[Situation]:
@@ -110,6 +115,8 @@ def read_situations(path: Path) -> list[Situation]:
                 recorded_choice=record.get("choice"),
                 recorded_probabilities=dict(record.get("probabilities") or []),
                 recorded_input_tokens=usage.get("input_tokens"),
+                recorded_output_tokens=usage.get("output_tokens"),
+                recorded_cached_input_tokens=usage.get("cached_input_tokens"),
             )
     return [s for s in situations if s.criteria]
 
@@ -120,7 +127,14 @@ def collapse(situations: list[Situation]) -> list[Situation]:
     seen: dict[tuple, int] = {}
     collapsed: list[Situation] = []
     for situation in situations:
-        key = (situation.map_id, tuple(sorted(situation.criteria)), situation.instructions)
+        # Ignore only the bookkeeping ID; every observed fact and label can
+        # change a decision, even when the map and legal action IDs match.
+        state = {key: value for key, value in situation.state.items() if key != "context_id"}
+        key = (
+            json.dumps(state, sort_keys=True, separators=(",", ":")),
+            tuple(sorted(situation.criteria.items())),
+            situation.instructions,
+        )
         if key in seen:
             index = seen[key]
             collapsed[index] = replace(
@@ -147,6 +161,8 @@ def variant(spec: str) -> tuple[str, Callable[[Situation], str]]:
         return spec, lambda situation: situation.instructions
     if spec == "current":
         return spec, _current_instructions
+    if spec == "current-minimal":
+        return spec, _current_minimal_instructions
     if spec == "mission":
         return spec, lambda situation: _mission_only(situation.instructions)
     if spec.startswith("hint:"):
@@ -200,6 +216,18 @@ def _current_instructions(situation: Situation) -> str:
     return decision_instructions(observation_from_state(situation.state))
 
 
+def _current_minimal_instructions(situation: Situation) -> str:
+    """Rebuild the current Jev prompt."""
+
+    if str(POKEBOT_ROOT) not in sys.path:
+        if not POKEBOT_ROOT.is_dir():
+            raise RuntimeError("the `current-minimal` variant needs `python3.13 scripts/bootstrap.py`")
+        sys.path.insert(0, str(POKEBOT_ROOT))
+    from jev_plays_emerald.opening import decision_instructions
+
+    return decision_instructions(observation_from_state(situation.state))
+
+
 def observation_from_state(state: dict) -> Observation:
     """Rebuild the Observation a request was built from.
 
@@ -234,7 +262,7 @@ def observation_from_state(state: dict) -> Observation:
         menu_phase=state.get("menu_phase", "none"),
         battle_phase=state.get("battle_phase", "none"),
         party=tuple(
-            PartyMember(p["species"], p["level"], p["hp"], p["max_hp"], p["status"], moves(p["moves"]))
+            PartyMember(p["species"], p["level"], p["hp"], p["max_hp"], p["status"], moves(p["moves"]), p.get("is_egg", False))
             for p in state.get("party") or ()
         ),
         inventory=tuple(
@@ -287,6 +315,12 @@ def observation_from_state(state: dict) -> Observation:
             for s in state.get("signs") or ()
         ),
         recent_dialogue=tuple(state.get("recent_dialogue") or ()),
+        money=state.get("money", 0),
+        shop_items=tuple(ShopItem(item["name"], item["price"]) for item in state.get("shop_items") or ()),
+        learning_move=moves([state["learning_move"]])[0] if state.get("learning_move") else None,
+        learning_party_index=state.get("learning_party_index"),
+        tutorial_battle=state.get("tutorial_battle", False),
+        training_spots=tuple(tuple(point) for point in state.get("training_spots") or ()),
     )
 
 
@@ -317,6 +351,8 @@ async def ask_all(client, situations: list[Situation], rewrite) -> list[Answer]:
                 result.choice,
                 dict(result.probabilities),
                 result.usage.input_tokens,
+                output_tokens=result.usage.output_tokens,
+                cached_input_tokens=result.usage.cached_input_tokens,
             )
         )
     return answers
@@ -353,6 +389,8 @@ def recorded_answers(situations: list[Situation]) -> list[Answer]:
             situation.recorded_probabilities,
             situation.recorded_input_tokens,
             None if situation.recorded_choice else "no response was logged",
+            output_tokens=situation.recorded_output_tokens,
+            cached_input_tokens=situation.recorded_cached_input_tokens,
         )
         for situation in situations
     ]
@@ -464,7 +502,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--variant", action="append", default=[],
         help=(
-            "recorded | current | mission | hint:<text> | drop:<phrase> "
+            "recorded | current | current-minimal | mission | hint:<text> | drop:<phrase> "
             "(repeatable; default: current)"
         ),
     )
@@ -545,6 +583,9 @@ def main(argv: list[str] | None = None) -> int:
                             "choice": answer.choice,
                             "probabilities": answer.probabilities,
                             "error": answer.error,
+                            "input_tokens": answer.input_tokens,
+                            "output_tokens": answer.output_tokens,
+                            "cached_input_tokens": answer.cached_input_tokens,
                         }
                         for answer in answers
                     ]

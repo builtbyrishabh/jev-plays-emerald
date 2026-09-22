@@ -9,7 +9,7 @@ from typing import Any
 
 from jev_plays_emerald.actions import Action, Outcome
 from jev_plays_emerald.jev import TokenUsage
-from jev_plays_emerald.planner_knowledge import knowledge_for, stage_key
+from jev_plays_emerald.planner_knowledge import stage_key
 from jev_plays_emerald.planner_memory import EvidenceLedger
 from jev_plays_emerald.state import Observation
 
@@ -30,17 +30,28 @@ class PlannerAdvice:
     latency_ms: float
 
     @property
+    def guidance(self) -> dict[str, str]:
+        """The advice models need, without request-accounting metadata."""
+
+        return {
+            "hint": self.hint,
+            "destination_action_id": self.destination_action_id,
+            "location": self.location,
+            "avoid": self.avoid,
+            "success_signal": self.success_signal,
+        }
+
+    @property
     def text(self) -> str:
         return (
-            f"Hint: {self.hint} Exact location: {self.location}. "
+            f"{self.hint} Exact location: {self.location}. "
             f"Avoid: {self.avoid} Success looks like: {self.success_signal}."
         )
 
     @property
     def follow_up_text(self) -> str:
         return (
-            "Planner follow-up: the exact first action has already been completed. "
-            f"Continue the remaining goal using only the current legal actions: {self.hint} "
+            f"Continue the remaining recovery goal from the current menu: {self.hint} "
             f"Avoid: {self.avoid} Success looks like: {self.success_signal}."
         )
 
@@ -51,6 +62,31 @@ def story_progress(observation: Observation) -> tuple:
         observation.rival_house_state,
         observation.lab_state,
         tuple(member.species for member in observation.party),
+    )
+
+
+def practical_progress(before: Observation, after: Observation) -> bool:
+    """Recognize useful travel or preparation that should not look like a stall."""
+
+    before_map = before.position.map_id if before.position else None
+    after_map = after.position.map_id if after.position else None
+    before_party = tuple(
+        (member.species, member.level, member.hp, member.status,
+         tuple(move.pp for move in member.moves))
+        for member in before.party
+    )
+    after_party = tuple(
+        (member.species, member.level, member.hp, member.status,
+         tuple(move.pp for move in member.moves))
+        for member in after.party
+    )
+    before_inventory = tuple((item.name, item.quantity) for item in before.inventory)
+    after_inventory = tuple((item.name, item.quantity) for item in after.inventory)
+    return (
+        before_map != after_map
+        or before_party != after_party
+        or before_inventory != after_inventory
+        or before.money != after.money
     )
 
 
@@ -74,10 +110,18 @@ class PlannerMemory:
         self.ledger = ledger or EvidenceLedger()
         self.history: deque[dict[str, Any]] = deque(maxlen=24)
         self._attempts: dict[tuple[str, tuple[int, int], str], _Attempt] = {}
+        self._actions_without_progress = 0
         self._planned_progress: tuple | None = None
         self._active_hypothesis: _ActiveHypothesis | None = None
 
     def reason(self, observation: Observation) -> str | None:
+        if (
+            observation.game_state != "OVERWORLD"
+            or not observation.controllable
+            or observation.menu_phase != "none"
+            or observation.battle_phase != "none"
+        ):
+            return None
         current_stage = stage_key(observation)
         if any(
             attempt.count >= 3
@@ -85,11 +129,15 @@ class PlannerMemory:
             if stage == current_stage
         ):
             return "three repeated attempts without story progress"
+        if self._actions_without_progress >= 8:
+            return "eight decisions without story progress"
         return None
 
     def sync_progress(self, observation: Observation) -> bool:
         """Clear attempts and verify a followed hint when trusted progress changes."""
 
+        if observation.game_state not in {"OVERWORLD", "BATTLE", "CHOOSE_STARTER"}:
+            return False
         progress = story_progress(observation)
         if self._planned_progress is None:
             self._planned_progress = progress
@@ -108,6 +156,7 @@ class PlannerMemory:
         self._active_hypothesis = None
         self._planned_progress = progress
         self._attempts.clear()
+        self._actions_without_progress = 0
         return True
 
     def accept(
@@ -121,11 +170,13 @@ class PlannerMemory:
             self.ledger.record_hypothesis(
                 stage, map_id, advice.hint, advice.destination_action_id
             )
+            self.ledger.remember_plan(stage, advice.guidance)
             self._active_hypothesis = _ActiveHypothesis(
                 stage, advice.destination_action_id
             )
         self._planned_progress = story_progress(observation)
         self._attempts.clear()
+        self._actions_without_progress = 0
 
     def expire_advice(self) -> None:
         """Consume an immediate hint without treating it as proven or disproven."""
@@ -158,6 +209,13 @@ class PlannerMemory:
         ):
             return
         changed = story_progress(before) != story_progress(after)
+        map_changed = (
+            before.position is not None
+            and after.position is not None
+            and before.position.map_id != after.position.map_id
+        )
+        if map_changed:
+            self.ledger.remember_route(before.position.map_id, after.position.map_id, action.id)
         self.history.append(
             {
                 "from": asdict(before.position) if before.position else None,
@@ -171,15 +229,19 @@ class PlannerMemory:
         )
         if changed:
             self._attempts.clear()
+            self._actions_without_progress = 0
             return
         if before.position is None:
             return
-
         stage = stage_key(before)
         key = (stage, before.position.map_id, action.id)
         attempt = self._attempts.setdefault(key, _Attempt())
         attempt.count += 1
         attempt.last_result = reason or outcome.value
+        if practical_progress(before, after):
+            self._actions_without_progress = 0
+        else:
+            self._actions_without_progress += 1
         if attempt.count == 3 and outcome is not Outcome.SUCCESS:
             self.ledger.record_dead_end(
                 stage,
@@ -197,20 +259,18 @@ class PlannerMemory:
         advice: PlannerAdvice | None,
         follow_up: PlannerAdvice | None = None,
     ) -> dict[str, Any]:
-        stage = stage_key(observation)
-        map_id = observation.position.map_id if observation.position else None
-        saved = self.ledger.summary(stage, map_id)
         return {
-            "current_goal": stage.replace("_", " "),
-            "confirmed_facts": list(knowledge_for(observation)),
-            "verified_lessons": saved["verified"],
-            "avoid_repeating": saved["dead_ends"] + saved["rejected"],
             "legal_actions": [
                 self._action_summary(observation, action) for action in actions
             ],
-            "planner_hint": asdict(advice) if advice is not None else None,
+            "planner_hint": advice.guidance if advice is not None else None,
             "planner_follow_up": (
-                {**asdict(follow_up), "status": "first_action_completed"}
+                {
+                    "hint": follow_up.hint,
+                    "avoid": follow_up.avoid,
+                    "success_signal": follow_up.success_signal,
+                    "status": "first_action_completed",
+                }
                 if follow_up is not None
                 else None
             ),
@@ -224,14 +284,18 @@ class PlannerMemory:
         follow_up: PlannerAdvice | None = None,
     ) -> dict[str, Any]:
         brief = self.decision_brief(observation, actions, advice, follow_up)
-        return {
+        objective = stage_key(observation)
+        context = {
             "trigger": self.reason(observation),
-            "walkthroughKnowledge": brief["confirmed_facts"],
-            "verifiedLessons": brief["verified_lessons"],
-            "deadEnds": brief["avoid_repeating"],
+            "currentObjective": objective,
             "legalActions": brief["legal_actions"],
             "previousAdvice": brief["planner_hint"] or brief["planner_follow_up"],
         }
+        if objective == "meet_neighbor":
+            rival_name = "May" if observation.player_gender == "male" else "Brendan"
+            context["currentObjective"] = f"meet {rival_name}, the rival"
+            context["rivalName"] = rival_name
+        return context
 
     def _action_summary(
         self, observation: Observation, action: Action
@@ -244,7 +308,6 @@ class PlannerMemory:
         )
         return {
             "action_id": action.id,
-            "label": action.label,
             "attempts_without_progress": attempt.count if attempt else 0,
             "last_result": attempt.last_result if attempt else None,
         }

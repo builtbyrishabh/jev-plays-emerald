@@ -110,6 +110,38 @@ def test_collapse_counts_repeats_of_one_situation(tmp_path):
     assert collapse(situations)[0].occurrences == 3
 
 
+def test_collapse_preserves_state_and_label_differences():
+    base = situation()
+    variants = [
+        base,
+        replace(base, state={**base.state, "recent_dialogue": ["Come find me"]}),
+        replace(base, state={**base.state, "party": [{"hp": 1}]}),
+        replace(base, state={"position": {"map_id": [0, 9], "coordinates": [1, 1]}}),
+        replace(base, criteria={**base.criteria, "talk:1": "the rival"}),
+    ]
+    assert len(collapse(variants)) == len(variants)
+
+
+def test_export_preserves_recorded_and_replayed_usage(tmp_path, monkeypatch):
+    from jev_plays_emerald.replay import main
+
+    class Client:
+        async def choose(self, **kwargs):
+            return JevChoice("talk:1", {"talk:1": 1.0}, None, TokenUsage(120, 10, 80), 1.0)
+
+    monkeypatch.setattr("jev_plays_emerald.service.default_choice_client", Client)
+    path = log(tmp_path / "log.jsonl", [request("ctx"), response("ctx", "talk:1", {"talk:1": 1.0})])
+    output = tmp_path / "answers.json"
+    assert main([str(path), "--variant", "mission", "--out", str(output)]) == 0
+    answers = json.loads(output.read_text())
+    assert answers["recorded"][0]["input_tokens"] == 100
+    assert answers["recorded"][0]["output_tokens"] == 10
+    assert answers["recorded"][0]["cached_input_tokens"] is None
+    assert answers["mission"][0]["input_tokens"] == 120
+    assert answers["mission"][0]["output_tokens"] == 10
+    assert answers["mission"][0]["cached_input_tokens"] == 80
+
+
 def situation(instructions: str = MISSION, **changes) -> Situation:
     base = Situation(
         context_id="ctx",
@@ -123,6 +155,34 @@ def situation(instructions: str = MISSION, **changes) -> Situation:
 def test_mission_variant_drops_every_hint():
     hinted = situation(f"{MISSION} Go into Mays House and talk to the child there.")
     assert variant("mission")[1](hinted) == MISSION
+
+
+def test_current_minimal_variant_replays_the_prompt_used_with_luna(monkeypatch):
+    monkeypatch.setenv("JEV_TARGET", "first-gym")
+    recorded = situation(
+        state={
+            "game_state": "OVERWORLD",
+            "position": {
+                "map_id": [0, 9],
+                "coordinates": [10, 9],
+                "facing": "Up",
+                "map_name": "Littleroot Town",
+            },
+            "recent_dialogue": ["Our daughter is upstairs, I think."],
+            "opening_flags": {
+                "rescued_birch": False,
+                "received_pokedex": False,
+                "defeated_rival_route103": False,
+                "set_wall_clock": True,
+            },
+        }
+    )
+
+    rewritten = variant("current-minimal")[1](recorded)
+
+    assert rewritten.startswith("Goal: earn the Stone Badge.")
+    assert "latest relevant dialogue" in rewritten
+    assert "Go into Mays House" not in rewritten
 
 
 def test_hint_variant_swaps_the_hint_and_keeps_the_mission():

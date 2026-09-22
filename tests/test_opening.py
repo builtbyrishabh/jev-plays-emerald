@@ -15,6 +15,27 @@ def observation(**changes):
     base=Observation('test','OVERWORLD',MapPosition((0,18),(10,4),'Up'),True,'none','none',(),(),OpeningFlags(True,False,False),None,())
     return replace(base,**changes)
 
+
+@pytest.mark.parametrize("task,expected", [
+    ("Task_SetClock_HandleInput", "setup:clock"),
+    ("Task_ViewClock_HandleInput", "setup:close-clock"),
+])
+def test_clock_screens_always_offer_the_matching_normal_input(task, expected):
+    state = observation(game_state="UNKNOWN", position=None, controllable=False, tasks=(task,))
+    assert [action.id for action in legal_actions(state)] == [expected]
+
+
+def test_view_clock_executor_cancels_with_b_and_never_sets_time(monkeypatch):
+    from modules.context import context
+    from modules import tasks
+    from jev_plays_emerald.actions import Action, _setup_plan
+
+    pressed = []
+    monkeypatch.setattr(context, "emulator", SimpleNamespace(press_button=pressed.append))
+    monkeypatch.setattr(tasks, "task_is_active", lambda name: not pressed)
+    list(_setup_plan(Action("setup:close-clock", "Close wall clock", "clock")).start())
+    assert pressed == ["B"]
+
 def test_wild_win_and_other_route103_trainer_never_complete():
     for trainer in (None, 100):
         progress=RivalProgress(starter_acquired=True)

@@ -30,10 +30,9 @@ implementations stay runnable while they are compared. The launcher starts the
 service once and throws it away before the emulator boots, so a missing `node`
 or an unbuilt `service/` fails at launch rather than at the first decision.
 
-`JEV_AUTHORED_HINTS=0` removes Python's situation hints from Jev's choice
-instructions. The general mission remains, while recent in-game dialogue is
-included in the structured observation. Leave `JEV_PLANNER_MODEL` unset for a
-dialogue-only Jev experiment.
+Jev's choice instructions contain a high-level mission and a general method for
+using recent in-game dialogue and observed state. They contain no authored route.
+Leave `JEV_PLANNER_MODEL` unset for a Jev-only run.
 
 ## Transport
 
@@ -51,18 +50,24 @@ while a request is pending, inputs stay neutral and the viewer stays responsive.
 
 ## The planner
 
-`service/src/planner.ts` uses `generateText` and the configured Gateway model to
+`service/src/planner.ts` uses either bounded headless Codex calls (backend `codex`)
+or `generateText` and the configured Gateway model (backend `gateway`) to
 return a bounded JSON recovery plan. The destination must be one of the current
 action IDs; Python validates it again after the response crosses the process
 boundary. The other fields are a concise hint, exact location, an action to avoid,
 and a visible success signal.
 
-Python owns a 24-attempt memory and triggers planning only after three repetitions
-without story progress. The exact destination expires after Jev follows it, while
+The Codex child receives a minimal environment without API keys, uses saved
+ChatGPT authentication, and has no game controls or coding tools. Its usage
+includes CLI prompt overhead. [Configuration and verification](codex-planner.md).
+
+Python owns a 24-attempt memory and triggers planning after three repetitions or
+eight decisions without story progress. Useful map travel, party improvement,
+healing and inventory changes reset the general counter. The exact destination expires after Jev follows it, while
 the remaining guidance persists across map changes until story progress. A local
-atomic JSON ledger supplies verified lessons and map-scoped dead ends to later
-runs. Python checks pause, context and story staleness before accepting advice;
-planner failures pause visibly. Planner mode disables authored situation hints and
+atomic JSON ledger retains verified lessons and map-scoped dead ends for inspection;
+they are not replayed into model prompts. Python checks pause, context and story
+staleness before accepting advice; planner failures pause visibly. Planner mode
 keeps every legal alternative instead of applying the old repetition filter.
 [Behavior, launch command and limitations](planner-proposal.md).
 

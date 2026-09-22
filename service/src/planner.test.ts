@@ -45,9 +45,15 @@ test('planner advice requires bounded JSON fields', () => {
   assert.throws(() => validatePlannerAdvice(JSON.stringify(valid), true, options), /truncated/)
 })
 
-test('planner has room to reason and must correct advice contradicted by evidence', () => {
+test('planner may use Emerald knowledge and gives a concrete recovery milestone', () => {
   assert.ok(PLANNER_MAX_OUTPUT_TOKENS >= 1024)
-  assert.match(PLANNER_INSTRUCTIONS, /walkthroughKnowledge as reference/i)
   assert.match(PLANNER_INSTRUCTIONS, /liveState as authority/i)
+  assert.match(PLANNER_INSTRUCTIONS, /use (?:your own )?Emerald knowledge/i)
+  assert.match(PLANNER_INSTRUCTIONS, /currentObjective/i)
+  assert.match(PLANNER_INSTRUCTIONS, /rivalName/i)
+  assert.match(PLANNER_INSTRUCTIONS, /Do not substitute\s+a different person/i)
+  assert.match(PLANNER_INSTRUCTIONS, /immediate reachable milestone/i)
+  assert.match(PLANNER_INSTRUCTIONS, /places, people, or objects by name/i)
+  assert.doesNotMatch(PLANNER_INSTRUCTIONS, /walkthroughKnowledge/i)
   assert.match(PLANNER_INSTRUCTIONS, /Return JSON only/i)
 })

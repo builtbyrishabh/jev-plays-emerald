@@ -19,10 +19,10 @@ JEV_PRICING_CHECKED_ON = "2026-09-20"
 @dataclass(frozen=True)
 class CostEstimate:
     estimated_usd: float | None
-    input_usd_per_token: float
-    output_usd_per_token: float
-    source: str
-    checked_on: str
+    input_usd_per_token: float | None
+    output_usd_per_token: float | None
+    source: str | None
+    checked_on: str | None
 
 
 @dataclass(frozen=True)
@@ -35,10 +35,48 @@ class DecisionRecord:
     latency_ms: float | None
     usage: TokenUsage
     cost: CostEstimate
+    model: str | None = None
+
+
+@dataclass(frozen=True)
+class UsageTotals:
+    """Known token subtotals, with unknown terminal usage and pending calls explicit."""
+
+    calls: int = 0
+    responses: int = 0
+    errors: int = 0
+    stale: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cached_input_tokens: int = 0
+    missing_input: int = 0
+    missing_output: int = 0
+    missing_cached: int = 0
+
+    @property
+    def pending(self) -> int:
+        return max(0, self.calls - self.responses - self.errors)
+
+    def finished(self, usage: TokenUsage, *, error: bool = False, stale: bool = False) -> UsageTotals:
+        return replace(
+            self,
+            responses=self.responses + (not error),
+            errors=self.errors + error,
+            stale=self.stale + stale,
+            input_tokens=self.input_tokens + (usage.input_tokens or 0),
+            output_tokens=self.output_tokens + (usage.output_tokens or 0),
+            cached_input_tokens=self.cached_input_tokens + (usage.cached_input_tokens or 0),
+            missing_input=self.missing_input + (usage.input_tokens is None),
+            missing_output=self.missing_output + (usage.output_tokens is None),
+            missing_cached=self.missing_cached + (usage.cached_input_tokens is None),
+        )
 
 
 @dataclass(frozen=True)
 class AgentStatus:
+    decision_usage: UsageTotals = UsageTotals()
+    planner_usage: UsageTotals = UsageTotals()
+    decision_count: int = 0
     phase: str = "idle"
     context_id: str | None = None
     available_actions: tuple[tuple[str, str], ...] = ()
@@ -58,8 +96,9 @@ RUN_LOG = Path(__file__).resolve().parents[2] / "runs" / "decisions.jsonl"
 class DecisionTelemetry:
     """Publish immutable status and append credential-free JSONL events."""
 
-    def __init__(self, path: Path | None = None) -> None:
+    def __init__(self, path: Path | None = None, *, model: str = "typesafe-ai/jev") -> None:
         self._path = RUN_LOG if path is None else path
+        self._model = model
         self._snapshot = AgentStatus()
 
     @property
@@ -91,6 +130,8 @@ class DecisionTelemetry:
         criteria: Mapping[str, JsonValue | None],
         instructions: JsonValue,
     ) -> None:
+        usage = self._snapshot.decision_usage
+        self._snapshot = replace(self._snapshot, decision_usage=replace(usage, calls=usage.calls + 1))
         self._append(
             {
                 "event": "request",
@@ -107,6 +148,26 @@ class DecisionTelemetry:
                 },
             }
         )
+
+    def request_failed(
+        self, *, context_id: str, attempt: int, error: Exception, stale: bool, retry: bool
+    ) -> None:
+        """Record a terminal request failure without inventing provider usage."""
+        self._snapshot = replace(self._snapshot, decision_usage=self._snapshot.decision_usage.finished(
+            TokenUsage(), error=True, stale=stale,
+        ))
+        self._append({
+            "event": "request-error",
+            "source": "model",
+            "model": self._model,
+            "context_id": context_id,
+            "attempt": attempt,
+            "message": str(error) or type(error).__name__,
+            "error_type": type(error).__name__,
+            "stale": stale,
+            "retry": retry,
+            "usage": None,
+        })
 
     def selected(
         self,
@@ -126,13 +187,15 @@ class DecisionTelemetry:
             confidence=result.confidence if result is not None else None,
             latency_ms=result.latency_ms if result is not None else None,
             usage=result.usage if result is not None else TokenUsage(),
-            cost=_estimate_cost(result.usage if result is not None else TokenUsage()),
+            cost=_estimate_cost(result.usage if result is not None else TokenUsage(), self._model),
+            model=self._model if result is not None else None,
         )
         self._snapshot = replace(
             self._snapshot,
             phase="selected",
             pending_attempt=None,
             last_decision=decision,
+            decision_count=self._snapshot.decision_count + (source == "model"),
             last_error=None,
         )
         self._append({"event": "decision", **asdict(decision)})
@@ -145,10 +208,14 @@ class DecisionTelemetry:
         result: JevChoice,
         disposition: str,
     ) -> None:
+        self._snapshot = replace(self._snapshot, decision_usage=self._snapshot.decision_usage.finished(
+            result.usage, stale=disposition == "stale",
+        ))
         self._append(
             {
                 "event": "response",
                 "source": "model",
+                "model": self._model,
                 "context_id": context_id,
                 "attempt": attempt,
                 "disposition": disposition,
@@ -157,7 +224,7 @@ class DecisionTelemetry:
                 "confidence": result.confidence,
                 "latency_ms": result.latency_ms,
                 "usage": asdict(result.usage),
-                "cost": asdict(_estimate_cost(result.usage)),
+                "cost": asdict(_estimate_cost(result.usage, self._model)),
             }
         )
 
@@ -206,7 +273,20 @@ class DecisionTelemetry:
         self._append({"event": "discarded", "reason": message})
 
     def planner_event(self, event: str, **fields: object) -> None:
-        # Planner usage stays separate: Jev's token price does not apply to it.
+        # Count transport events only, never advice selection or action outcomes.
+        totals = self._snapshot.planner_usage
+        if event == "planner-request":
+            totals = replace(totals, calls=totals.calls + 1)
+        elif event in {"planner-response", "planner-error"}:
+            raw = fields.get("usage")
+            raw = raw if isinstance(raw, Mapping) else {}
+            usage = TokenUsage(**{
+                key: value if isinstance(value := raw.get(key), int) and not isinstance(value, bool) and value >= 0 else None
+                for key in ("input_tokens", "output_tokens", "cached_input_tokens")
+            })
+            totals = totals.finished(usage, error=event == "planner-error",
+                                     stale=fields.get("disposition") == "stale" or fields.get("stale") is True)
+        self._snapshot = replace(self._snapshot, planner_usage=totals)
         self._append({"event": event, **fields})
 
     def _append(self, event: dict[str, object]) -> None:
@@ -216,7 +296,9 @@ class DecisionTelemetry:
             output.write("\n")
 
 
-def _estimate_cost(usage: TokenUsage) -> CostEstimate:
+def _estimate_cost(usage: TokenUsage, model: str = "typesafe-ai/jev") -> CostEstimate:
+    if model != "typesafe-ai/jev":
+        return CostEstimate(None, None, None, None, None)
     estimated_usd = (
         None
         if usage.input_tokens is None

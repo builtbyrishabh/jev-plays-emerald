@@ -26,6 +26,7 @@ from jev_plays_emerald.jev import (
     JevChoice,
     JevGateway,
     JevGatewayError,
+    JevResponseError,
     JevTimeoutError,
     JsonValue,
     TokenUsage,
@@ -138,15 +139,18 @@ class DecisionService:
             choice=choice,
             probabilities=probabilities,
             confidence=float(confidence) if confidence is not None else None,
-            usage=TokenUsage(usage.get("inputTokens"), usage.get("outputTokens")),
+            usage=TokenUsage(usage.get("inputTokens"), usage.get("outputTokens"), usage.get("cachedInputTokens")),
             latency_ms=latency_ms,
         )
 
     async def plan(self, *, state: JsonValue, options: dict, instructions: str) -> PlannerAdvice:
+        # A cold CLI start takes longer than a direct gateway request. Leave the
+        # child time to terminate and report its deadline before the pipe times out.
+        timeout = 120.0 if os.environ.get("JEV_PLANNER_BACKEND") == "codex" else self._timeout_seconds
         response = self._exchange({
             "type": "plan", "state": state, "options": options,
-            "instructions": instructions, "timeoutMs": int(self._timeout_seconds * 1000),
-        }, self._timeout_seconds)
+            "instructions": instructions, "timeoutMs": int(timeout * 1000),
+        }, timeout + 5)
         if response.get("type") == "error":
             raise _service_error(response)
         required = ("hint", "destinationActionId", "location", "avoid", "successSignal")
@@ -166,7 +170,7 @@ class DecisionService:
             avoid=response["avoid"],
             success_signal=response["successSignal"],
             model=model,
-            usage=TokenUsage(usage.get("inputTokens"), usage.get("outputTokens")),
+            usage=TokenUsage(usage.get("inputTokens"), usage.get("outputTokens"), usage.get("cachedInputTokens")),
             latency_ms=response.get("latencyMs", 0),
         )
 
@@ -217,6 +221,8 @@ def _service_error(response: dict) -> Exception:
         return JevTimeoutError(message)
     if kind == "invalid":
         return ValueError(message)
+    if kind == "invalid-response":
+        return JevResponseError(message)
     status_code = response.get("statusCode")
     return JevGatewayError(message, status_code=status_code if isinstance(status_code, int) else None)
 

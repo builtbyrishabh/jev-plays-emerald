@@ -10,9 +10,9 @@
   <body>
     <main class="shell">
       <header class="topbar">
-        <div>
-          <p class="eyebrow">Live agent run</p>
-          <h1>Jev Plays Emerald</h1>
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">J</span>
+          <div><p class="eyebrow">Jev plays · Luna coaches</p><h1>Jev Plays Emerald</h1></div>
         </div>
         <div class="run-controls">
           <span id="connection" class="connection">Connecting</span>
@@ -25,74 +25,112 @@
           <div class="game-frame">
             <img src="/stream_video?fps=15" alt="Live Pokémon Emerald gameplay">
             <div class="screen-shine" aria-hidden="true"></div>
+            <div class="game-caption">
+              <span id="game-state">Waiting for game</span>
+              <span id="position">—</span>
+            </div>
           </div>
-          <div class="game-caption">
-            <span id="game-state">Waiting for game</span>
-            <span id="position">—</span>
-          </div>
+
+          <section class="party-card" aria-label="Party health">
+            <div class="party-title"><span class="section-label">Party</span><span class="muted">Live HP</span></div>
+            <div class="party-lists">
+              <div id="party" class="hp-list"><p class="empty">Waiting for Jev’s first Pokémon</p></div>
+              <div id="opponent" class="hp-list"></div>
+            </div>
+          </section>
         </section>
 
-        <aside class="decision-panel" aria-label="Jev decision status">
+        <aside class="decision-panel" aria-label="Mission control">
+          <section class="mission-card" aria-label="Run mission">
+            <div class="mission-heading">
+              <div><p class="eyebrow">The mission</p><h2 id="mission">Earn the Stone Badge in Rustboro</h2></div>
+              <div class="journey-score"><strong id="journey-count">0/8</strong><span id="badge-count">0 / 1 badge</span></div>
+            </div>
+            <ol id="progress" class="progress-list" aria-label="Journey milestones">
+              <li data-step="starter"><span class="route-node"></span><span class="route-label">Starter</span></li>
+              <li data-step="rescue"><span class="route-node"></span><span class="route-label">Birch</span></li>
+              <li data-step="rival"><span class="route-node"></span><span class="route-label">Rival</span></li>
+              <li data-step="pokedex"><span class="route-node"></span><span class="route-label">Pokédex</span></li>
+              <li data-step="petalburg"><span class="route-node"></span><span class="route-label">Wally</span></li>
+              <li data-step="woods"><span class="route-node"></span><span class="route-label">Devon</span></li>
+              <li data-step="gym"><span class="route-node"></span><span class="route-label">Gym</span></li>
+              <li data-step="stone_badge"><span class="route-node"></span><span class="route-label">Badge</span></li>
+            </ol>
+            <p id="run-result" class="run-result">Journey in progress</p>
+          </section>
+
           <section class="status-card">
+            <div class="section-heading"><p class="eyebrow">Jev · player</p><span class="agent-badge">PLAYER</span></div>
             <div class="status-row">
               <span id="phase-dot" class="phase-dot idle" aria-hidden="true"></span>
-              <div>
-                <p id="phase-label" class="phase-label">Starting</p>
-                <p id="phase-detail" class="muted">Waiting for agent state</p>
-              </div>
+              <div><p id="phase-label" class="phase-label">Starting</p><p id="phase-detail" class="muted">Waiting for agent state</p></div>
             </div>
-            <p class="section-label">Current goal</p>
+            <p class="section-label">Current objective</p>
             <p id="goal" class="goal">Waiting for the first game observation</p>
-            <div class="metric-row">
-              <div><span class="section-label">Active action</span><strong id="active-action">None</strong></div>
-              <div><span class="section-label">Latency</span><strong id="latency">—</strong></div>
+            <div class="selected-action">
+              <span class="action-arrow" aria-hidden="true">→</span>
+              <span><span class="section-label" id="active-label">Current action</span><strong id="active-action">Waiting for a choice</strong></span>
+              <span id="latency" class="muted"></span>
+            </div>
+            <div class="run-metrics" aria-label="Run metrics">
+              <span><strong id="decision-count">—</strong> decisions</span>
+              <span><strong id="manual-count">0</strong> manual</span>
+              <span><strong id="planner-count">—</strong> Luna calls</span>
             </div>
           </section>
 
-          <section id="planner-panel" class="panel-section" hidden>
-            <h2>Planner advice</h2>
-            <p id="planner-meta" class="muted"></p>
-            <p id="planner-advice"></p>
-            <p class="section-label">Exact location</p>
-            <p id="planner-location"></p>
-            <p class="section-label">Avoid</p>
-            <p id="planner-avoid"></p>
-            <p class="section-label">Success signal</p>
-            <p id="planner-success"></p>
+          <section id="planner-panel" class="planner-card">
+            <div class="section-heading"><p class="eyebrow">Luna · advisor</p><span class="agent-badge advisor">ADVISOR</span></div>
+            <p id="planner-advice" class="planner-advice">Jev is choosing without planner guidance.</p>
+            <details id="planner-details" hidden open>
+              <summary>Route guidance</summary>
+              <dl class="route-guidance">
+                <div class="go"><dt>Go</dt><dd id="planner-location"></dd></div>
+                <div class="avoid"><dt>Avoid</dt><dd id="planner-avoid"></dd></div>
+                <div class="success"><dt>Done</dt><dd id="planner-success"></dd></div>
+              </dl>
+            </details>
+            <details class="coach-meta">
+              <summary id="planner-meta">Planner not enabled</summary>
+              <p id="planner-budget" class="muted">Coaching budget unavailable</p>
+            </details>
           </section>
 
-          <section class="panel-section">
-            <h2>Dialogue Jev remembers</h2>
-            <ol id="dialogue" class="dialogue-list"><li class="empty">No dialogue captured yet.</li></ol>
-          </section>
+          <details class="run-details">
+            <summary><span>Run details</span><span id="option-count" class="muted">0 options</span></summary>
+            <div class="details-body">
+              <details class="panel-section action-details">
+                <summary>Action probabilities</summary>
+                <div class="section-heading"><h2 id="actions-heading">Available actions</h2><span id="probability-note" class="muted">Awaiting a choice</span></div>
+                <div id="actions" class="actions"><p class="empty">No meaningful choice right now.</p></div>
+                <p class="section-footnote">Jev’s preferences · not success probabilities</p>
+              </details>
 
-          <section class="panel-section">
-            <div class="section-heading">
-              <h2 id="actions-heading">Available actions</h2>
-              <span id="probability-note" class="muted">No decision yet</span>
+              <details class="panel-section">
+                <summary>Token usage</summary>
+                <div class="usage-grid">
+                  <section><h3>Jev · player</h3><p id="decision-calls" class="muted">Unavailable</p>
+                    <dl><dt>Input</dt><dd id="decision-input">—</dd><dt>Output</dt><dd id="decision-output">—</dd><dt>Cached input</dt><dd id="decision-cached">—</dd></dl>
+                  </section>
+                  <section><h3>Luna · advisor</h3><p id="planner-calls" class="muted">Unavailable</p>
+                    <dl><dt>Input</dt><dd id="planner-input">—</dd><dt>Output</dt><dd id="planner-output">—</dd><dt>Cached input</dt><dd id="planner-cached">—</dd></dl>
+                  </section>
+                </div>
+                <p class="section-footnote">Includes stale responses and failed calls. Unknown counts are calls with missing provider usage.</p>
+              </details>
+
+              <details class="panel-section">
+                <summary>Coaching interventions</summary>
+                <ol id="interventions" class="recent-list"><li class="empty">No coaching interventions yet.</li></ol>
+              </details>
+
+              <details class="panel-section recent-section">
+                <summary>Decision timeline</summary>
+                <ol id="recent" class="recent-list"><li class="empty">No choices yet.</li></ol>
+              </details>
+              <p class="section-footnote details-footnote">Manual actions count submissions through the agent controls. Pause and resume are excluded.</p>
             </div>
-            <div id="actions" class="actions"><p class="empty">No meaningful choice right now.</p></div>
-          </section>
-
-          <section class="panel-section hp-section">
-            <h2>Battle state</h2>
-            <div id="party" class="hp-list"><p class="empty">No party data yet.</p></div>
-            <div id="opponent" class="hp-list"></div>
-          </section>
-
-          <section class="panel-section">
-            <h2>Opening progress</h2>
-            <ol id="progress" class="progress-list">
-              <li data-step="starter"><span></span>Choose starter</li>
-              <li data-step="rescue"><span></span>Rescue Birch</li>
-              <li data-step="rival"><span></span>Defeat rival</li>
-            </ol>
-          </section>
-
-          <section class="panel-section recent-section">
-            <h2>Recent choices</h2>
-            <ol id="recent" class="recent-list"><li class="empty">No choices yet.</li></ol>
-          </section>
+          </details>
         </aside>
       </div>
     </main>

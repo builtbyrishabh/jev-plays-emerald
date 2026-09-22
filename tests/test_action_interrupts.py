@@ -363,12 +363,14 @@ def test_battle_actions_use_the_actual_active_battler_after_a_switch(monkeypatch
                 total_hp=20,
                 status_condition=SimpleNamespace(name="Healthy"),
                 moves=(move, None, None, None),
+                is_egg=False,
             )
 
         from modules import tasks
         from modules.battle_strategies._util import BattleStrategyUtil
         monkeypatch.setattr(memory, "get_event_var", lambda _: 0)
-        monkeypatch.setattr(player, "get_player", lambda: SimpleNamespace(gender="male"))
+        monkeypatch.setattr(memory, "read_symbol", lambda *args, **kwargs: bytes([1, 0, 0, 2]))
+        monkeypatch.setattr(player, "get_player", lambda: SimpleNamespace(gender="male", money=3000))
         monkeypatch.setattr(tasks, "get_tasks", lambda: ())
         monkeypatch.setattr(tasks, "get_global_script_context", lambda: SimpleNamespace(is_active=False))
         monkeypatch.setattr(BattleStrategyUtil, "get_escape_chance", lambda _: 0)
@@ -387,6 +389,7 @@ def test_battle_actions_use_the_actual_active_battler_after_a_switch(monkeypatch
             "get_battle_state",
                 lambda: SimpleNamespace(
                     is_trainer_battle=False,
+                    type=battle_state.BattleType(0),
                     own_side=SimpleNamespace(
                         active_battler=SimpleNamespace(
                             party_index=1,
@@ -443,6 +446,8 @@ def test_talk_allows_its_expected_script_but_interrupts_for_a_menu(monkeypatch: 
             yield
 
         monkeypatch.setattr(higher_level_actions, "talk_to_npc", talk_to_npc)
+        from modules import map as map_module
+        monkeypatch.setattr(map_module, "get_map_data_for_current_position", lambda: SimpleNamespace(objects=[]))
         executor = ActionExecutor(boundary)
         action = Action("talk:3", "Talk", boundary.context_id)
         run = executor.execute(action)
