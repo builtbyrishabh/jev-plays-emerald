@@ -149,13 +149,26 @@ class DecisionService:
         }, self._timeout_seconds)
         if response.get("type") == "error":
             raise _service_error(response)
-        text, model = response.get("text"), response.get("model")
-        if (response.get("type") != "plan" or not isinstance(text, str)
-                or not text.strip() or len(text) > 4000 or model != planner_model()):
+        required = ("hint", "destinationActionId", "location", "avoid", "successSignal")
+        model = response.get("model")
+        if (response.get("type") != "plan"
+                or any(not isinstance(response.get(key), str)
+                       or not response[key].strip() for key in required)
+                or model != planner_model()):
             raise ValueError("invalid planner advice")
+        if response["destinationActionId"] not in options:
+            raise ValueError("planner destination is not a legal action")
         usage = response.get("usage") or {}
-        return PlannerAdvice(text, model, TokenUsage(usage.get("inputTokens"), usage.get("outputTokens")),
-                             response.get("latencyMs", 0))
+        return PlannerAdvice(
+            hint=response["hint"],
+            destination_action_id=response["destinationActionId"],
+            location=response["location"],
+            avoid=response["avoid"],
+            success_signal=response["successSignal"],
+            model=model,
+            usage=TokenUsage(usage.get("inputTokens"), usage.get("outputTokens")),
+            latency_ms=response.get("latencyMs", 0),
+        )
 
     def _exchange(self, payload: dict[str, object], timeout_seconds: float) -> dict:
         process = self._process

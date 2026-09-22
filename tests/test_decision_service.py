@@ -75,26 +75,64 @@ def test_handshake_reports_the_action_schema_version(tmp_path):
         client.close()
 
 
-@pytest.mark.parametrize("advice", ["Inspect the nearby object.", "", 42])
-def test_planner_transport_validates_advice_and_keeps_usage_separate(tmp_path, monkeypatch, advice):
+def test_planner_transport_validates_exact_location_and_keeps_usage_separate(tmp_path, monkeypatch):
     monkeypatch.setenv("JEV_PLANNER_MODEL", "test/model")
-    body = f'''
+    body = '''
         assert request["type"] == "plan"
-        reply({{"id": request["id"], "type": "plan", "text": {advice!r},
+        reply({"id": request["id"], "type": "plan",
+               "hint": "Enter the neighbor's house.",
+               "destinationActionId": "walk:0:10:5:3",
+               "location": "The offered doorway at (5, 3)",
+               "avoid": "Do not talk to Mom again.",
+               "successSignal": "The map changes.",
                "model": "test/model", "latencyMs": 12,
-               "usage": {{"inputTokens": 100, "outputTokens": 20}}}})
+               "usage": {"inputTokens": 100, "outputTokens": 20}})
     '''
     client = service(tmp_path, body)
     try:
         client.start()
-        call = client.plan(state=STATE, options=OPTIONS, instructions="mission")
-        if isinstance(advice, str) and advice:
-            result = asyncio.run(call)
-            assert result.text == advice
-            assert result.usage.input_tokens == 100
-        else:
-            with pytest.raises(ValueError, match="invalid planner"):
-                asyncio.run(call)
+        result = asyncio.run(client.plan(state=STATE, options=OPTIONS, instructions="mission"))
+        assert result.destination_action_id == "walk:0:10:5:3"
+        assert result.location == "The offered doorway at (5, 3)"
+        assert result.usage.input_tokens == 100
+    finally:
+        client.close()
+
+
+@pytest.mark.parametrize(
+    "response, message",
+    [
+        ({"destinationActionId": "walk:0:10:5:3"}, "invalid planner"),
+        (
+            {
+                "hint": "Go there.",
+                "destinationActionId": "walk:invented",
+                "location": "Imaginary place",
+                "avoid": "Nothing",
+                "successSignal": "Progress",
+            },
+            "legal action",
+        ),
+    ],
+)
+def test_planner_transport_rejects_missing_fields_and_invented_destinations(
+    tmp_path, monkeypatch, response, message
+):
+    monkeypatch.setenv("JEV_PLANNER_MODEL", "test/model")
+    payload = {
+        "id": None,
+        "type": "plan",
+        **response,
+        "model": "test/model",
+        "latencyMs": 1,
+        "usage": {},
+    }
+    body = f'''reply({payload!r} | {{"id": request["id"]}})'''
+    client = service(tmp_path, body)
+    try:
+        client.start()
+        with pytest.raises(ValueError, match=message):
+            asyncio.run(client.plan(state=STATE, options=OPTIONS, instructions="mission"))
     finally:
         client.close()
 

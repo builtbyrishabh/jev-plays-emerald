@@ -18,7 +18,8 @@ export type Request =
 
 export type Response =
   | { id: string; type: 'pong'; schemaVersion: number }
-  | { id: string; type: 'plan'; text: string; model: string; latencyMs: number;
+  | { id: string; type: 'plan'; hint: string; destinationActionId: string;
+      location: string; avoid: string; successSignal: string; model: string; latencyMs: number;
       usage: { inputTokens: number | undefined; outputTokens: number | undefined } }
   | {
       id: string
