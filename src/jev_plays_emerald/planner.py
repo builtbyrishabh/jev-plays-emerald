@@ -137,6 +137,14 @@ class PlannerMemory:
         if active is not None and active.action_id == action_id:
             active.followed = True
 
+    def advice_was_followed(self, action_id: str) -> bool:
+        active = self._active_hypothesis
+        return bool(
+            active is not None
+            and active.action_id == action_id
+            and active.followed
+        )
+
     def record(
         self,
         before: Observation,

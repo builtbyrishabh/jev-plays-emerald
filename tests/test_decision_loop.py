@@ -499,6 +499,40 @@ def test_completed_hint_action_becomes_forward_only_follow_up_guidance(
     assert len(worker.futures) == 1
 
 
+def test_unfollowed_hint_expires_when_jev_leaves_by_another_action(mode_runtime):
+    mode, reader, _, worker, _, telemetry = mode_runtime
+    mode._planner = PlannerMemory(
+        ledger=EvidenceLedger(telemetry._path.parent / "memory.json")
+    )
+    lab = replace(
+        reader.observation,
+        game_state="OVERWORLD",
+        menu_phase="none",
+        position=MapPosition((1, 4), (6, 12), "Down", "Birch's Lab"),
+    )
+    mode._planner.sync_progress(lab)
+    mode._advice = _advice("Use the south door.", "walk:1:4:6:12")
+    mode._planner.accept(lab, mode._advice)
+    town = replace(
+        lab,
+        position=MapPosition((0, 9), (10, 9), "Up", "Littleroot Town"),
+    )
+    may_house = Action("walk:0:9:14:8", "Enter May's House", town.context_id)
+    mode._latest_observation = town
+    mode._available_actions = (may_house,)
+
+    mode._start_model_request((may_house,), attempt=1)
+
+    request = next(
+        json.loads(line)
+        for line in telemetry._path.read_text().splitlines()
+        if json.loads(line)["event"] == "request"
+    )
+    assert request["state"]["decision_brief"]["planner_follow_up"] is None
+    assert mode.planner_view["advice"] is None
+    assert len(worker.futures) == 1
+
+
 def test_story_progress_discards_active_advice_without_calling_planner(mode_runtime):
     mode, reader, _, _, _, telemetry = mode_runtime
     mode._planner = PlannerMemory()

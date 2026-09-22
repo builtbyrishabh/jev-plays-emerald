@@ -325,6 +325,8 @@ class JevEmeraldMode(BotMode):
                 self._pending_action = actions[0]
         if len(actions) == 1 and not naming:
             action = actions[0]
+            if self._planner is not None and self._advice is not None:
+                self._planner.mark_advice_followed(action.id)
             self._telemetry.selected(
                 context_id=action.context_id,
                 source="deterministic",
@@ -424,7 +426,10 @@ class JevEmeraldMode(BotMode):
                 action.id != self._advice.destination_action_id for action in actions
             )
         ):
-            self._follow_up_advice = self._advice
+            if self._planner.advice_was_followed(self._advice.destination_action_id):
+                self._follow_up_advice = self._advice
+            else:
+                self._planner.expire_advice()
             self._advice = None
         state = asdict(observation)
         state["observation_note"] = (
