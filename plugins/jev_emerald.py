@@ -21,10 +21,15 @@ class ViewerStatePublisher:
     """Build browser data only from immutable values already owned by the mode."""
 
     def __init__(self) -> None:
+        self._mode: JevEmeraldMode | None = None
         self._last_decision: object | None = None
-        self._recent_choices: deque[dict[str, object]] = deque(maxlen=6)
+        self._recent_choices: deque[dict[str, object]] = deque(maxlen=50)
 
     def build(self, mode: JevEmeraldMode) -> dict[str, object]:
+        if self._mode is not mode:
+            self._recent_choices.clear()
+            self._last_decision = None
+            self._mode = mode
         status = mode.status
         observation = mode.observation
         completed = bool(getattr(mode, "completed", False))
@@ -43,15 +48,20 @@ class ViewerStatePublisher:
             and status.last_decision.context_id == status.context_id
             else {},
         )
+        # Preserve action names after the live context moves beyond this choice.
+        if status.last_decision is self._last_decision and self._recent_choices:
+            decision = self._recent_choices[-1]
         if status.last_decision is not None and status.last_decision is not self._last_decision:
             self._recent_choices.append(decision)
             self._last_decision = status.last_decision
 
         return {
             "version": 1,
+            "decision_count": status.decision_count,
             "mode": mode.name(),
             "paused": mode.paused,
             "goal": _current_goal(observation, completed),
+            "planner": getattr(mode, "planner_view", None),
             "status": {
                 "phase": phase,
                 "context_id": status.context_id,
