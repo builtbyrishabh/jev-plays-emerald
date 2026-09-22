@@ -107,12 +107,11 @@ class PlannerMemory:
     ) -> None:
         """Activate validated advice, rejecting an unproven hint it replaces."""
 
-        if self._active_hypothesis is not None:
-            self.ledger.reject_hypothesis(
-                self._active_hypothesis.stage, self._active_hypothesis.action_id
-            )
-        self._active_hypothesis = None
         if advice is not None:
+            if self._active_hypothesis is not None:
+                self.ledger.reject_hypothesis(
+                    self._active_hypothesis.stage, self._active_hypothesis.action_id
+                )
             stage = stage_key(observation)
             map_id = observation.position.map_id if observation.position else None
             self.ledger.record_hypothesis(

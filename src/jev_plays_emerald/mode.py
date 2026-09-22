@@ -123,7 +123,7 @@ class JevEmeraldMode(BotMode):
         return {
             "model": planner_model(), "calls": self._planner_calls,
             "pending": self._pending_plan is not None, "reason": self._planner_reason,
-            "advice": self._advice.text if self._advice else None,
+            "advice": asdict(self._advice) if self._advice else None,
         }
 
     @staticmethod
@@ -301,6 +301,10 @@ class JevEmeraldMode(BotMode):
             context.emulator.press_button("B")
 
     def _choose_or_submit(self) -> None:
+        observation = self._latest_observation
+        if self._planner is not None and observation is not None:
+            if self._planner.sync_progress(observation):
+                self._advice = None
         with self._state_lock:
             if (
                 self._paused
@@ -325,10 +329,8 @@ class JevEmeraldMode(BotMode):
             if self._paused:
                 self._telemetry.pause()
             return
-        if not naming and self._planner is not None and self._latest_observation is not None:
-            if self._planner.sync_progress(self._latest_observation):
-                self._advice = None
-            reason = self._planner.reason(self._latest_observation)
+        if not naming and self._planner is not None and observation is not None:
+            reason = self._planner.reason(observation)
             if reason is not None:
                 self._start_plan_request(actions, reason)
                 return
@@ -339,10 +341,9 @@ class JevEmeraldMode(BotMode):
         if observation is None or self._planner is None:
             return
         state = asdict(observation)
-        state["planner_context"] = {
-            "trigger": reason, "previous_advice": self._advice.text if self._advice else None,
-            "attempts": list(self._planner.history),
-        }
+        state["planner_context"] = self._planner.planner_context(
+            observation, actions, self._advice
+        )
         options = {action.id: action.label for action in actions}
         mission = MISSION
         with self._state_lock:
@@ -374,6 +375,13 @@ class JevEmeraldMode(BotMode):
             )
             try:
                 advice = pending.future.result()
+                if not any(
+                    action.id == advice.destination_action_id
+                    for action in pending.actions
+                ):
+                    raise ValueError(
+                        "planner destination is not in the pending legal actions"
+                    )
             except Exception as error:
                 self._telemetry.planner_event("planner-error", message=str(error), stale=stale,
                                               call=self._planner_calls)
@@ -390,8 +398,8 @@ class JevEmeraldMode(BotMode):
                                           disposition="stale" if stale else "accepted",
                                           call=self._planner_calls)
             if not stale and self._planner is not None:
+                self._planner.accept(pending.observation, advice)
                 self._advice = advice
-                self._planner.accept(pending.observation)
         return True
 
     def _start_model_request(
@@ -409,6 +417,10 @@ class JevEmeraldMode(BotMode):
             "HP values are exact observations read from game memory. "
             "Opponent moves and future random outcomes are not provided."
         )
+        if self._planner is not None:
+            state["decision_brief"] = self._planner.decision_brief(
+                observation, actions, self._advice
+            )
         options: dict[str, JsonValue | None] = {
             action.id: action.label for action in actions
         }
@@ -511,6 +523,8 @@ class JevEmeraldMode(BotMode):
             if self._paused:
                 self._telemetry.pause()
             return True
+        if self._planner is not None and self._advice is not None:
+            self._planner.mark_advice_followed(action.id)
         self._telemetry.selected(
             context_id=pending.context_id,
             source="model",

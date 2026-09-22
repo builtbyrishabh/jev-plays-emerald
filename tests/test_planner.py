@@ -151,3 +151,17 @@ def test_only_a_followed_hint_is_verified_on_story_progress(tmp_path):
     memory.sync_progress(replace(obs, rival_house_state=3))
 
     assert EvidenceLedger(path).summary("meet_neighbor", (0, 9))["verified"]
+
+
+def test_reset_after_failed_refinement_keeps_existing_hypothesis(tmp_path):
+    path = tmp_path / "m.json"
+    obs = observation((0, 9))
+    memory = PlannerMemory(ledger=EvidenceLedger(path))
+    memory.sync_progress(obs)
+    memory.accept(obs, advice("walk:0:9:14:8"))
+    memory.mark_advice_followed("walk:0:9:14:8")
+
+    memory.accept(obs)
+    memory.sync_progress(replace(obs, rival_house_state=3))
+
+    assert EvidenceLedger(path).summary("meet_neighbor", (0, 9))["verified"]

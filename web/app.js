@@ -64,6 +64,16 @@ function actionPanelView(state) {
   return { heading: "Available actions", note: "Probabilities unavailable", rows: [] };
 }
 
+function plannerPanelView(planner) {
+  const advice = planner?.advice;
+  return {
+    hint: advice?.hint ?? "Waiting until Jev repeats an action three times",
+    location: advice?.location ?? "—",
+    avoid: advice?.avoid ?? "—",
+    success: advice?.success_signal ?? "—",
+  };
+}
+
 function text(id, value) {
   const element = document.getElementById(id);
   if (element) element.textContent = value;
@@ -176,8 +186,12 @@ function render(state) {
   document.getElementById("planner-panel").hidden = !state.planner;
   if (state.planner) {
     const planner = state.planner;
+    const panel = plannerPanelView(planner);
     text("planner-meta", `${planner.model} · ${planner.calls} calls · ${planner.pending ? "Planning…" : planner.reason ?? "Ready"}`);
-    text("planner-advice", planner.advice ?? "Waiting for the first objective");
+    text("planner-advice", panel.hint);
+    text("planner-location", panel.location);
+    text("planner-avoid", panel.avoid);
+    text("planner-success", panel.success);
     if (planner.pending) text("phase-detail", "Planner is reviewing the game; Jev chooses next");
   }
   text("active-action", state.active_action?.label ?? "None");
@@ -256,4 +270,4 @@ if (typeof document !== "undefined") {
   window.setInterval(refresh, 250);
 }
 
-if (typeof module !== "undefined") module.exports = { actionPanelView, buildViewModel };
+if (typeof module !== "undefined") module.exports = { actionPanelView, buildViewModel, plannerPanelView };

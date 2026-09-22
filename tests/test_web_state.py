@@ -56,6 +56,7 @@ def _mode_view(
     rival_flag: bool = False,
     lab_state: int = 0,
     received_pokedex: bool = True,
+    planner: dict | None = None,
 ) -> SimpleNamespace:
     party = (
         PartyMember(
@@ -112,6 +113,7 @@ def _mode_view(
         active_action=Action("battle-move:0", "Use Tackle", observation.context_id),
         api_key="must-not-leak",
         callback=lambda: None,
+        planner_view=planner,
     )
 
 
@@ -178,6 +180,22 @@ def test_post_lab_goal_does_not_depend_on_late_pokedex_flag(plugin_module) -> No
     assert snapshot["goal"] == "Reach Route 103 and win the rival battle"
 
 
+def test_viewer_snapshot_preserves_structured_planner_advice(plugin_module) -> None:
+    advice = {
+        "hint": "Meet May upstairs.",
+        "destination_action_id": "walk:0:9:14:8",
+        "location": "May's House entrance at (14, 8)",
+        "avoid": "Do not retry Route 101.",
+        "success_signal": "rival_house_state changes",
+    }
+    snapshot = plugin_module.ViewerStatePublisher().build(
+        _mode_view(planner={"model": "luna", "calls": 1, "pending": False,
+                            "reason": "stuck", "advice": advice})
+    )
+
+    assert snapshot["planner"]["advice"] == advice
+
+
 def test_pause_control_queues_owner_thread_change_without_accessing_emulator(
     plugin_module, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -209,6 +227,9 @@ def test_pause_control_queues_owner_thread_change_without_accessing_emulator(
             viewer_html = await viewer.text()
             assert "Jev Plays Emerald" in viewer_html
             assert 'id="dialogue"' in viewer_html
+            assert 'id="planner-location"' in viewer_html
+            assert 'id="planner-avoid"' in viewer_html
+            assert 'id="planner-success"' in viewer_html
 
             invalid = await client.post("/jev/control", json={"paused": "true"})
             assert invalid.status == 400
@@ -233,7 +254,7 @@ def test_pause_control_queues_owner_thread_change_without_accessing_emulator(
 
 def test_view_model_makes_transient_and_checkpoint_states_explicit() -> None:
     script = """
-const { actionPanelView, buildViewModel } = require('./web/app.js');
+const { actionPanelView, buildViewModel, plannerPanelView } = require('./web/app.js');
 const cases = [
   [{ paused: false, status: { phase: 'pending', pending_attempt: 2 } }, ['Thinking', 'pending']],
   [{ paused: false, status: { phase: 'error', last_error: 'Gateway timed out' } }, ['Needs attention', 'error']],
@@ -268,6 +289,17 @@ const completed = actionPanelView({
 });
 if (completed.heading !== 'Last decision' || completed.rows.length !== 2 || completed.rows[1].probability !== 0.4) {
   throw new Error(`last distribution missing: ${JSON.stringify(completed)}`);
+}
+const waitingPlanner = plannerPanelView({ advice: null });
+if (waitingPlanner.hint !== 'Waiting until Jev repeats an action three times') {
+  throw new Error(`planner waiting message is unclear: ${JSON.stringify(waitingPlanner)}`);
+}
+const activePlanner = plannerPanelView({ advice: {
+  hint: 'Meet May upstairs.', location: "May's House at (14, 8)",
+  avoid: 'Do not retry Route 101.', success_signal: 'rival state changes',
+} });
+if (activePlanner.location !== "May's House at (14, 8)" || activePlanner.success !== 'rival state changes') {
+  throw new Error(`structured planner fields missing: ${JSON.stringify(activePlanner)}`);
 }
 """
 

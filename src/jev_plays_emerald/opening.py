@@ -218,9 +218,10 @@ def decision_instructions(
     hint = _situation_hint(observation) if advice is None and authored_hints else advice
     if advice:
         hint = (
-            "Planner advice is a persistent objective, not a fixed action. Adapt it to your "
-            "CURRENT map and recent results; skip steps already completed. You choose the "
-            "action. Prefer progress over revisiting completed locations. Planner: " + advice
+            "The decision brief above comes from observed game state. Luna intervened because "
+            "you repeated an action three times, but you—not Luna—choose the next legal action. "
+            "Use its exact location and success signal, and avoid the named dead end. Luna: "
+            + advice
         )
     return f"{_BASE_MISSION} {hint}" if hint else _BASE_MISSION
 
