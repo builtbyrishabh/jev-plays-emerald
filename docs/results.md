@@ -190,6 +190,40 @@ planner refinement exhausted Luna's hidden-reasoning budget without visible
 text; refinements now have sufficient headroom, and a failed refresh retains
 valid existing advice instead of pausing play.
 
+## Grounded stuck-only Luna run — 22 September 2026
+
+The fresh `grounded-luna-rival-20260922-v5` profile used Luna only after three
+repeated overworld actions, with authored hints disabled. Jev received live
+dialogue, direct attempt counts, dead-end evidence, and structured
+planner output whose destination had to be a currently offered action ID.
+
+The run reached May, rescued Birch, chose Treecko, won the rescue battle, crossed
+Oldale, and reached the Route 103 rival. Luna was called five times: four responses
+were accepted and one became stale because the game moved first. It used 10,190
+input and 1,005 output tokens. Jev made 59 model decisions and the runtime made 20
+deterministic setup/dialogue decisions. There were 69 successful actions, 10
+expected interruptions, and no failed executor actions. Jev used 179,932 input
+and 7,784 output tokens, with recorded Jev cost of about **$0.00728**; planner
+cost was not estimated by this project.
+
+The key recovery crossed several maps: Luna first named the lab doorway, Jev took
+it, then the remaining guidance stayed visible long enough for Jev to choose May's
+House. A later stuck-only call selected the upstairs action at `(2, 2)`, after
+which Jev met May and advanced the story. The doorway executor also stopped
+reporting false success when Jev began on a landing warp.
+
+Jev reached the optional rival battle without another navigation blocker but lost
+with the opposing Torchic at 3 HP. This satisfies the requested starter/rescue
+milestone and demonstrates progress through the rival encounter, not rival
+completion. The loss also left Emerald in a post-battle state with no legal action;
+battle-loss recovery remains separate follow-up work.
+
+The run reused the prior JSON ledger. Its Route 101 dead end was present in the
+brief and was not repeated before meeting May. Review then found that verified
+entries were persisted but omitted from prompts; the final code now exposes them
+to both Jev and Luna, covered by focused tests. That final prompt change was not
+claimed as live cross-run evidence.
+
 ## Scope limits
 
 This is an opening slice ending at the first rival victory. It does not implement gyms or general Hoenn progression. Catching is exposed when balls and a wild opponent are available, but is not exercised by these opening runs. Jev receives the current structured game state, mission, menu and up to 12 recent outcomes. The optional LLM planner also receives 24 map-scoped attempts and its previous advice; without it the authored hints remain active. Mechanical navigation and mandatory dialogue remain code-driven. See [replaying decisions](replay.md) for the effect of authored hints.

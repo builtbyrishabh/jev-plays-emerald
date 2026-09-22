@@ -45,14 +45,25 @@ After an
 intervention, require three new non-progress attempts before another call; do
 not repeatedly charge for the same history window.
 
-The planner receives the current objective, map and position, available action
-labels, before/after state summaries, refusal reasons and a short memory of
-the last correction. It returns at most 40 words: one recovery nudge explaining
-what failed and the next useful milestone or constraint. Code does not execute
-that text or evaluate model-written completion predicates. Story progress clears
-stuck evidence and active advice without calling the planner. Advice remains in
-Jev's context across map transitions until that progress occurs; three new
-non-progress attempts are required before another call.
+The planner receives the current objective, map and position, dialogue, available
+action labels, attempt counts, refusal reasons, local walkthrough facts, verified
+past lessons and the last correction. It returns bounded JSON with a short hint,
+one currently offered action ID, exact location, an action to avoid, and an
+observable success signal. Python rejects destinations outside the current menu.
+Code does not execute model-written text or completion predicates.
+
+After Jev takes the exact first action, its old destination is marked completed
+instead of remaining a current target. The rest of the hint stays as forward-only
+guidance across map transitions until trusted story state changes. This lets a
+single intervention express “enter May's House, then go upstairs” without pulling
+Jev back to the entrance. Three new non-progress attempts are required before
+another planner call.
+
+Evidence lives in versioned, atomic `runs/planner-memory.json`. Failed or
+interrupted repeated actions become map-scoped dead ends; only a followed hint
+that precedes observed story progress becomes verified. Repeated unverified
+hypotheses are merged. A database is unnecessary for one local process and one
+ROM, but would be appropriate for concurrent workers or cross-game storage.
 
 Planner mode disables the old repetition-based action suppression: Jev keeps
 the same mechanically enumerated menu (still capped at 24 entries). The planner
@@ -108,7 +119,9 @@ decisions and 17 planner calls, including nine corrections and recovery from a
 rival loss. It was slower than our authored-hint baseline, so this is evidence
 of recovery, not an efficiency win yet.
 
-The next improvement is better feedback: verify that a promised exit actually
-changes the map, and retain what worked so the planner does not keep rediscovering
-it. The useful measurement is progress per planner intervention, alongside
-how many decisions remain Jev's own.
+The grounded run now verifies doorway transitions, retains what worked, and keeps
+multi-step guidance after the first exact action. In a fresh live run, five Luna
+calls got Jev through the clock, May's introduction, Birch's rescue, a Treecko,
+and to the Route 103 rival. Jev lost that optional battle with Torchic at 3 HP.
+This is evidence of sparse recovery through the requested starter milestone, not
+a claim that planning makes every decision better.

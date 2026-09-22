@@ -26,8 +26,15 @@ Existing profiles and saves are preserved. Use `--profile new-run-name` for a se
 For experimental LLM planning, run `pnpm --dir service install`, then prefix the
 launch command with `JEV_PLANNER_MODEL=openai/gpt-5.6-luna`. This disables authored
 route hints. The planner stays silent until three repeated overworld attempts
-without story progress, then supplies one short correction until the story advances.
-Jev still chooses every action. Advice and call count appear in the viewer. See
+without story progress, then supplies one structured correction: a currently legal
+action, exact location, action to avoid, and observable success signal. Once Jev
+completes that first action, the remaining hint stays as forward-only guidance until
+the story advances. Jev still chooses every action. Advice and call count appear in
+the viewer.
+
+Verified hints and observed dead ends persist in the inspectable
+`runs/planner-memory.json`. This opening slice does not need a database; replace the
+ledger only if multiple games or concurrent writers need shared memory. See
 [planner behavior and limits](docs/planner-proposal.md).
 
 Jev confirms the requested player name **Jev** through its decision API. The

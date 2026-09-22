@@ -52,13 +52,19 @@ while a request is pending, inputs stay neutral and the viewer stays responsive.
 ## The planner
 
 `service/src/planner.ts` uses `generateText` and the configured Gateway model to
-write a recovery nudge of at most 40 words. Python owns a 24-attempt memory and
-triggers planning only after three repetitions without story progress. Accepted
-advice remains in Jev's context until story progress silently clears it and the
-stuck evidence. Python checks pause and context staleness before
-accepting advice, and planner failures pause visibly. Planner mode disables
-authored situation hints and keeps every legal alternative instead of applying
-the old repetition filter. [Behavior, launch command and limitations](planner-proposal.md).
+return a bounded JSON recovery plan. The destination must be one of the current
+action IDs; Python validates it again after the response crosses the process
+boundary. The other fields are a concise hint, exact location, an action to avoid,
+and a visible success signal.
+
+Python owns a 24-attempt memory and triggers planning only after three repetitions
+without story progress. The exact destination expires after Jev follows it, while
+the remaining guidance persists across map changes until story progress. A local
+atomic JSON ledger supplies verified lessons and map-scoped dead ends to later
+runs. Python checks pause, context and story staleness before accepting advice;
+planner failures pause visibly. Planner mode disables authored situation hints and
+keeps every legal alternative instead of applying the old repetition filter.
+[Behavior, launch command and limitations](planner-proposal.md).
 
 ## The Jev client
 
