@@ -133,6 +133,9 @@ The normal launcher was also started with a separate fresh profile,
 `planner-viewer-20260922`. The real video, LLM advice panel, call count and Jev
 choices were inspected in the browser. That ongoing viewer run is separate
 from the completed bounded harness run above.
+It paused at May's house when the AI SDK rejected a Jev choice that was not a
+highest-probability option. Resume requested a fresh decision; that intervention
+is viewer testing, not part of the uninterrupted completion evidence above.
 
 Final checks: 172 Python tests plus 7 ROM subtests, TypeScript typecheck, and
 all 10 service tests pass. Two existing aiohttp test-helper warnings remain.
