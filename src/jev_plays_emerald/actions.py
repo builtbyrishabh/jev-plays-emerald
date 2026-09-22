@@ -357,55 +357,6 @@ def _dialogue_plan(action: Action) -> ExecutionPlan:
     return ExecutionPlan(advance, frozenset({"OVERWORLD", "CHANGE_MAP"}), frozenset({"none", "script"}))
 
 
-def _goal_plan(action: Action) -> ExecutionPlan:
-    def goal():
-        from modules.context import context
-        from modules.map_data import MapRSE
-        from modules.map import get_map_objects
-        from modules.player import get_player, get_player_location
-        from modules.modes.util import ensure_facing_direction
-        from modules.modes.util.higher_level_actions import talk_to_npc
-
-        here, _ = get_player_location()
-        male = get_player().gender == "male"
-        kind = action.id.partition(":")[2]
-        targets = {
-            "leave-truck": (MapRSE.INSIDE_OF_TRUCK, (4, 2)),
-            "upstairs": (here, (8, 2) if male else (2, 2)),
-            "rival-upstairs": (here, (2, 2) if male else (8, 2)),
-            "clock": (here, (5, 2)),
-            "rival-house": (MapRSE.LITTLEROOT_TOWN, (14, 8) if male else (5, 8)),
-            "meet-rival": (here, (5, 5)),
-            "leave-lab": (here, (6, 12)),
-            "birch-bag": (MapRSE.ROUTE101, (7, 15)),
-            "oldale": (MapRSE.OLDALE_TOWN, (10, 10)),
-            "rival": (MapRSE.ROUTE103, (10, 4)),
-        }
-        if kind == "downstairs":
-            destination = (here, (7, 1) if here == MapRSE.LITTLEROOT_TOWN_BRENDANS_HOUSE_2F else (1, 1))
-        elif kind == "leave-house":
-            destination = (here, (8, 8) if here == MapRSE.LITTLEROOT_TOWN_BRENDANS_HOUSE_1F else (2, 8))
-        else:
-            destination = targets[kind]
-        map_id, coordinates = destination
-        group, number = map_id.value if isinstance(map_id, MapRSE) else map_id
-        walk = Action(f"walk:{group}:{number}:{coordinates[0]}:{coordinates[1]}", action.label, action.context_id)
-        yield from _walk_plan(walk).start()
-        if kind in {"clock", "meet-rival", "birch-bag", "rival"}:
-            if kind == "rival":
-                # Resolve the live object at the source-backed rival landmark.
-                npc = next((obj for obj in get_map_objects() if obj.current_coords == (10, 3)), None)
-                if npc is None:
-                    raise RuntimeError("Route 103 rival object is not at the expected landmark")
-                yield from talk_to_npc(npc.local_id)
-            else:
-                yield from ensure_facing_direction("Up")
-                context.emulator.press_button("A")
-                yield
-
-    return ExecutionPlan(goal, frozenset({"OVERWORLD", "CHANGE_MAP"}), retry_on=(NavigationBlocked,))
-
-
 def _heal_plan(action: Action) -> ExecutionPlan:
     if action.id != "heal:oldale":
         raise ValueError("only Oldale healing is in opening scope")
@@ -585,7 +536,7 @@ def _catch_plan(action: Action) -> ExecutionPlan:
     return ExecutionPlan(throw, frozenset({"BATTLE", "BAG_MENU"}), frozenset({"battle", "bag_menu"}))
 
 
-ACTION_EXECUTORS.update({"setup": _setup_plan, "dialogue": _dialogue_plan, "goal": _goal_plan,
+ACTION_EXECUTORS.update({"setup": _setup_plan, "dialogue": _dialogue_plan,
                          "heal": _heal_plan, "battle-run": _battle_run_plan,
                          "interact": _interact_plan, "battle-switch": _battle_switch_plan,
                          "battle-item": _battle_item_plan, "catch": _catch_plan})

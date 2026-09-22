@@ -1,7 +1,7 @@
 # The TypeScript decision service
 
 `service/` holds the part of the decision layer that talks to a model: the Jev
-client today, the planner next. Everything else stays Python - the emulator
+client and the optional LLM planner. Everything else stays Python - the emulator
 loop, the observation reader, the option enumerator, the executors, and
 staleness validation.
 
@@ -11,7 +11,7 @@ Python                           |  TypeScript
 L0  frame loop                   |
 L1  Observation (RAM -> JSON)    |
 L2  option enumerator            |
-                                 |  L3  planner (LLM)       (next)
+                                 |  L3  planner (LLM, opt-in)
                                  |  L4  Jev client          (done)
 L5  executors (frame generators) |
     staleness + dispatch         |
@@ -24,7 +24,8 @@ cd service && pnpm install
 JEV_DECISION_SERVICE=1 uv run --env-file .env python -m jev_plays_emerald --rom ...
 ```
 
-Without the flag the direct Python client (`jev.py`) is used, so both
+Setting `JEV_PLANNER_MODEL=openai/gpt-5.6-sol` also enables the service and its
+`plan` request. Without either setting the direct Python client (`jev.py`) is used, so both
 implementations stay runnable while they are compared. The launcher starts the
 service once and throws it away before the emulator boots, so a missing `node`
 or an unbuilt `service/` fails at launch rather than at the first decision.
@@ -38,13 +39,20 @@ stdout carries only protocol lines; anything human-readable goes to stderr.
 The child inherits `AI_GATEWAY_API_KEY` from the environment. The key is never
 an argument, never logged, and appears in neither language's source.
 
-Two threads share the one child: the model worker asks for a choice, and the
-emulator owner thread asks for the menu. A dedicated reader thread delivers each
-answer to whoever is waiting on its `id`, so enumerating a new situation does
-not queue behind a decision that is still in flight - a single blocking read
-would make the frame loop wait out the whole model call. Each caller's deadline
-is its own, so a hung child still returns an error rather than stalling the
-emulator.
+The model worker sends one request at a time and reads the matching response
+under a lock, with a bounded deadline. Menu enumeration stays in-process on
+the emulator owner thread. Neither planning nor choosing blocks that thread;
+while a request is pending, inputs stay neutral and the viewer stays responsive.
+
+## The planner
+
+`service/src/planner.ts` uses `generateText` and the configured Gateway model to
+write a short objective. Python owns a 24-attempt memory, triggers planning at
+the first choice, story changes or three repetitions, and checks pause and
+context staleness before accepting advice. A planner failure pauses visibly.
+Jev then receives the base mission plus that advice, with no authored situation
+hint. Planner mode keeps the legal alternatives instead of applying the old
+repetition filter. [Behavior, launch command and limitations](planner-proposal.md).
 
 ## The Jev client
 

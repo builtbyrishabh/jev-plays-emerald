@@ -1,4 +1,4 @@
-"""Spike guards: the wide menu must stay stable and stay executable."""
+"""The open-world menu must stay stable and stay executable."""
 
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -68,24 +68,17 @@ def test_every_offered_action_has_an_executor():
 
 
 def test_menu_contains_no_story_destination():
-    """The point of the spike: primitives only, no "go fight the rival"."""
+    """Primitives only: no "go fight the rival" left anywhere in the menu."""
 
     offered = {action.id for action in open_world_actions(observation())}
     assert not any(action.startswith(("goal:", "heal:")) for action in offered)
     assert "interact:3:1" in offered  # bg events keep the clock reachable
 
 
-def test_flag_off_keeps_the_scripted_single_goal(monkeypatch):
-    monkeypatch.delenv("JEV_OPEN_WORLD_SPIKE", raising=False)
-    offered = legal_actions(observation())
-    assert [action.id for action in offered] == ["goal:rival"]
+def test_every_overworld_choice_comes_from_the_enumerator():
+    """Nothing between legal_actions and the menu decides where to go."""
 
-
-def test_flag_on_replaces_every_overworld_goal(monkeypatch):
-    monkeypatch.setenv("JEV_OPEN_WORLD_SPIKE", "1")
-    offered = legal_actions(observation())
-    assert offered == open_world_actions(observation())
-    assert not any(a.id.startswith("goal:") for a in offered)
+    assert legal_actions(observation()) == open_world_actions(observation())
 
 
 def test_a_doorway_is_walked_to_on_the_map_you_are_standing_on():
@@ -404,19 +397,11 @@ def test_reader_reads_nothing_without_a_walkable_position():
     assert _read_landmarks(None) == {}
 
 
-def test_the_scripted_route_pays_nothing_for_landmarks(monkeypatch):
-    """Reading the map costs a lookup per warp on every one of 60 frames a second.
-
-    Only the open-world enumerator reads the result, so the scripted route must
-    not be paying for it.
-    """
+def test_the_mode_reads_the_landmarks_the_menu_is_built_from():
+    """Reading the map costs a lookup per warp on every frame, and buys the menu."""
 
     from jev_plays_emerald.mode import JevEmeraldMode
 
-    monkeypatch.delenv("JEV_OPEN_WORLD_SPIKE", raising=False)
-    assert JevEmeraldMode()._observation_reader.landmarks is False
-
-    monkeypatch.setenv("JEV_OPEN_WORLD_SPIKE", "1")
     assert JevEmeraldMode()._observation_reader.landmarks is True
 
 

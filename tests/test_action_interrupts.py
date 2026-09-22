@@ -415,8 +415,12 @@ def test_battle_actions_use_the_actual_active_battler_after_a_switch(monkeypatch
                 ),
             ),
         )
+        # The turn menu also offers switching and the bag; the moves are the
+        # part that has to belong to whoever is actually out.
         [(action_id, label)] = [
-            (action.id, action.label) for action in legal_actions(observation)
+            (action.id, action.label)
+            for action in legal_actions(observation)
+            if action.id.startswith("battle-move:")
         ]
         assert action_id == "battle-move:0"
         assert label == (

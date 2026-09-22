@@ -31,6 +31,7 @@ from jev_plays_emerald.jev import (
     TokenUsage,
     validate_choice,
 )
+from jev_plays_emerald.planner import PlannerAdvice, planner_model
 
 SERVICE_FLAG = "JEV_DECISION_SERVICE"
 SERVICE_DIR = Path(__file__).resolve().parents[2] / "service"
@@ -141,6 +142,21 @@ class DecisionService:
             latency_ms=latency_ms,
         )
 
+    async def plan(self, *, state: JsonValue, options: dict, instructions: str) -> PlannerAdvice:
+        response = self._exchange({
+            "type": "plan", "state": state, "options": options,
+            "instructions": instructions, "timeoutMs": int(self._timeout_seconds * 1000),
+        }, self._timeout_seconds)
+        if response.get("type") == "error":
+            raise _service_error(response)
+        text, model = response.get("text"), response.get("model")
+        if (response.get("type") != "plan" or not isinstance(text, str)
+                or not text.strip() or len(text) > 4000 or model != planner_model()):
+            raise ValueError("invalid planner advice")
+        usage = response.get("usage") or {}
+        return PlannerAdvice(text, model, TokenUsage(usage.get("inputTokens"), usage.get("outputTokens")),
+                             response.get("latencyMs", 0))
+
     def _exchange(self, payload: dict[str, object], timeout_seconds: float) -> dict:
         process = self._process
         if process is None or process.stdin is None or process.stdout is None:
@@ -198,7 +214,7 @@ _SERVICE: DecisionService | None = None
 def service_enabled() -> bool:
     """Keep the direct Python gateway client the default while both exist."""
 
-    return os.environ.get(SERVICE_FLAG) == "1"
+    return os.environ.get(SERVICE_FLAG) == "1" or planner_model() is not None
 
 
 def default_choice_client():

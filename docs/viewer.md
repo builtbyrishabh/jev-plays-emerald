@@ -14,6 +14,11 @@ Pause and resume send `{ "paused": true | false }` to `POST /jev/control`. The H
 
 The plugin's frame listener publishes a new namespaced snapshot at `jev_emerald` from immutable mode properties. The snapshot is an explicit allowlist: it contains viewer status, observations needed by the panel, legal actions, the active action, progress, and recent choices. It does not serialize the mode object, callbacks, request state, API configuration, or credentials.
 
+With `JEV_PLANNER_MODEL` set, a separate Planner advice panel shows the real LLM
+objective, model, request count and reason for consulting it. While planning,
+inputs remain neutral. Jev's subsequent distribution stays in the action panel;
+the planner neither presses buttons nor supplies those probabilities.
+
 Run the focused checks with:
 
 ```sh

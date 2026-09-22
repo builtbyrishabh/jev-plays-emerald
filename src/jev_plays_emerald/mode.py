@@ -13,12 +13,8 @@ from modules.modes import BattleAction, BotMode
 
 from jev_plays_emerald.actions import Action, ActionExecutor, FrameState, Outcome
 from jev_plays_emerald.jev import JevChoice, JevGatewayError, JevTimeoutError, JsonValue
-from jev_plays_emerald.opening import (
-    RivalProgress,
-    decision_instructions,
-    legal_actions,
-    open_world_spike_enabled,
-)
+from jev_plays_emerald.opening import MISSION, RivalProgress, decision_instructions, legal_actions
+from jev_plays_emerald.planner import PlannerAdvice, PlannerMemory, planner_model, story_progress
 from jev_plays_emerald.service import default_choice_client
 from jev_plays_emerald.state import Observation, ObservationReader, RecentOutcome
 from jev_plays_emerald.telemetry import DecisionTelemetry
@@ -44,9 +40,9 @@ class _SingleRequestWorker:
     def __init__(self) -> None:
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="jev-choice")
         self._lock = Lock()
-        self._active: Future[JevChoice] | None = None
+        self._active: Future | None = None
 
-    def submit(self, function, /, *args, **kwargs) -> Future[JevChoice]:
+    def submit(self, function, /, *args, **kwargs) -> Future:
         with self._lock:
             if self._active is not None and not self._active.done():
                 raise RuntimeError("a Jev request is already in flight")
@@ -69,6 +65,14 @@ class _PendingDecision:
     future: Future[JevChoice]
 
 
+@dataclass(frozen=True)
+class _PendingPlan:
+    observation: Observation
+    generation: int
+    actions: tuple[Action, ...]
+    future: Future[PlannerAdvice]
+
+
 class JevEmeraldMode(BotMode):
     """Own PokéBot's frame loop and keep RAM access on that owner thread."""
 
@@ -82,9 +86,7 @@ class JevEmeraldMode(BotMode):
         telemetry: DecisionTelemetry | None = None,
     ):
         self._observation_reader = (
-            ObservationReader(landmarks=open_world_spike_enabled())
-            if observation_reader is None
-            else observation_reader
+            ObservationReader(landmarks=True) if observation_reader is None else observation_reader
         )
         self._paused = False
         self._progress = RivalProgress()
@@ -101,6 +103,22 @@ class JevEmeraldMode(BotMode):
         self._state_lock = Lock()
         self._decision_generation = 0
         self._pending_decision: _PendingDecision | None = None
+        self._planner = PlannerMemory() if planner_model() else None
+        self._pending_plan: _PendingPlan | None = None
+        self._advice: PlannerAdvice | None = None
+        self._planner_calls = 0
+        self._planner_reason: str | None = None
+        self._action_observation: Observation | None = None
+
+    @property
+    def planner_view(self) -> dict | None:
+        if self._planner is None:
+            return None
+        return {
+            "model": planner_model(), "calls": self._planner_calls,
+            "pending": self._pending_plan is not None, "reason": self._planner_reason,
+            "advice": self._advice.text if self._advice else None,
+        }
 
     @staticmethod
     def name() -> str:
@@ -172,7 +190,9 @@ class JevEmeraldMode(BotMode):
                 self._progress.observe(observation)
                 if self.completed and not self._paused:
                     self.set_paused(True)
-                actions = () if self.completed else legal_actions(observation)
+                actions = () if self.completed else legal_actions(
+                    observation, suppress_futile=self._planner is None,
+                )
                 with self._state_lock:
                     self._latest_observation = observation
                     self._available_actions = actions
@@ -180,24 +200,26 @@ class JevEmeraldMode(BotMode):
                     self._latest_observation.context_id, self._available_actions
                 )
 
-                handled_response = self._poll_model_response()
+                handled_response = self._poll_plan_response() or self._poll_model_response()
                 if (
                     not handled_response
                     and self._active_run is None
                     and self._pending_action is None
                     and self._pending_decision is None
+                    and self._pending_plan is None
                     and not self._paused
                 ):
                     self._choose_or_submit()
 
                 self._advance_nondecision_frame()
 
-                if self._pending_decision is not None and context.emulator is not None:
+                if (self._pending_decision is not None or self._pending_plan is not None) and context.emulator is not None:
                     context.emulator.reset_held_buttons()
 
                 with self._state_lock:
                     if self._active_run is None and self._pending_action is not None and not self._paused:
                         self._last_started_action = self._pending_action
+                        self._action_observation = observation
                         # Creating the generator claims the action; advancing it below
                         # remains on the owner thread, outside the state lock.
                         self._active_run = self._executor.execute(self._pending_action)
@@ -214,6 +236,9 @@ class JevEmeraldMode(BotMode):
                             # selected action remains the authoritative record for that frame.
                             action = self._last_started_action
                         if action is not None:
+                            if self._planner is not None and self._action_observation is not None:
+                                self._planner.record(self._action_observation, observation, action,
+                                                     outcome, self._executor.last_reason)
                             if action.id.startswith("starter:") and outcome is Outcome.SUCCESS:
                                 self._progress.starter_acquired = bool(observation.party)
                             self._recent_outcomes.append(
@@ -224,12 +249,11 @@ class JevEmeraldMode(BotMode):
                             )
                         self._active_run.close()
                         with self._state_lock:
+                            # A failure is ordinary now that Jev picks its own
+                            # destinations: "no path to that tile" is an answer,
+                            # not a bug, and the next decision reacts to it.
                             self._active_run = None
                             self._last_started_action = None
-                            if outcome is Outcome.FAILED and not open_world_spike_enabled():
-                                self._paused = True
-                                self._decision_generation += 1
-                                self._pending_action = None
                 elif self._paused and context.emulator is not None:
                     context.emulator.reset_held_buttons()
                 yield
@@ -244,6 +268,9 @@ class JevEmeraldMode(BotMode):
                 self._last_started_action = None
             if pending is not None:
                 pending.future.cancel()
+            if self._pending_plan is not None:
+                self._pending_plan.future.cancel()
+                self._pending_plan = None
             if active_run is not None:
                 active_run.close()
             if context.emulator is not None:
@@ -259,6 +286,7 @@ class JevEmeraldMode(BotMode):
             and self._active_run is None
             and self._pending_action is None
             and self._pending_decision is None
+            and self._pending_plan is None
             and not self._paused
             and context.emulator is not None
         ):
@@ -273,6 +301,7 @@ class JevEmeraldMode(BotMode):
                 or self._active_run is not None
                 or self._pending_action is not None
                 or self._pending_decision is not None
+                or self._pending_plan is not None
                 or not self._available_actions
             ):
                 return
@@ -289,7 +318,68 @@ class JevEmeraldMode(BotMode):
             if self._paused:
                 self._telemetry.pause()
             return
+        if self._planner is not None and self._latest_observation is not None:
+            reason = self._planner.reason(self._latest_observation)
+            if reason is not None:
+                self._start_plan_request(actions, reason)
+                return
         self._start_model_request(actions, attempt=1)
+
+    def _start_plan_request(self, actions: tuple[Action, ...], reason: str) -> None:
+        observation = self._latest_observation
+        if observation is None or self._planner is None:
+            return
+        state = asdict(observation)
+        state["planner_context"] = {
+            "trigger": reason, "previous_advice": self._advice.text if self._advice else None,
+            "attempts": list(self._planner.history),
+        }
+        options = {action.id: action.label for action in actions}
+        mission = MISSION
+        with self._state_lock:
+            if self._paused or self._pending_plan is not None:
+                return
+            try:
+                future = self._model_worker.submit(_request_plan, state, options, mission)
+            except RuntimeError:
+                return
+            self._pending_plan = _PendingPlan(observation, self._decision_generation, actions, future)
+            self._planner_calls += 1
+            self._planner_reason = reason
+        self._telemetry.planner_event("planner-request", model=planner_model(), state=state,
+                                      options=options, instructions=mission, call=self._planner_calls)
+        self._telemetry.pending(context_id=observation.context_id, attempt=1)
+
+    def _poll_plan_response(self) -> bool:
+        pending = self._pending_plan
+        if pending is None or not pending.future.done():
+            return False
+        with self._state_lock:
+            self._pending_plan = None
+            current = self._latest_observation
+            stale = (
+                self._paused or pending.generation != self._decision_generation
+                or current is None or current.context_id != pending.observation.context_id
+                or pending.actions != self._available_actions
+                or story_progress(current) != story_progress(pending.observation)
+            )
+            try:
+                advice = pending.future.result()
+            except Exception as error:
+                self._telemetry.planner_event("planner-error", message=str(error), stale=stale,
+                                              call=self._planner_calls)
+                if not stale:
+                    self._paused = True
+                    self._decision_generation += 1
+                    self._telemetry.error(f"Planner: {error}")
+                return True
+            self._telemetry.planner_event("planner-response", **asdict(advice),
+                                          disposition="stale" if stale else "accepted",
+                                          call=self._planner_calls)
+            if not stale and self._planner is not None:
+                self._advice = advice
+                self._planner.accept(pending.observation)
+        return True
 
     def _start_model_request(
         self,
@@ -309,13 +399,16 @@ class JevEmeraldMode(BotMode):
         options: dict[str, JsonValue | None] = {
             action.id: action.label for action in actions
         }
-        instructions = decision_instructions(observation)
+        instructions = decision_instructions(
+            observation, advice=self._advice.text if self._advice is not None else None,
+        )
         with self._state_lock:
             if (
                 self._paused
                 or self._active_run is not None
                 or self._pending_action is not None
                 or self._pending_decision is not None
+                or self._pending_plan is not None
                 or generation is not None and generation != self._decision_generation
             ):
                 return
@@ -474,6 +567,10 @@ def _request_choice(
             instructions=instructions,
         )
     )
+
+
+def _request_plan(state: JsonValue, options: dict, instructions: str) -> PlannerAdvice:
+    return asyncio.run(default_choice_client().plan(state=state, options=options, instructions=instructions))
 
 
 def _is_transient(error: Exception) -> bool:

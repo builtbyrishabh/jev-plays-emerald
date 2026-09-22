@@ -61,11 +61,6 @@
       "id": "dialogue:advance",
       "enumerated": false,
       "summary": "Advance mandatory cutscene text. Deterministic, never a model decision."
-    },
-    "goal": {
-      "id": "goal:<landmark>",
-      "enumerated": false,
-      "summary": "A step of the hardcoded opening route. Being deleted by the open-world enumerator; kept until the spike flag becomes the default."
     }
   }
 }

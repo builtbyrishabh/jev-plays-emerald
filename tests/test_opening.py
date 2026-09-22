@@ -41,10 +41,10 @@ def test_loaded_completed_save_cannot_be_a_new_win():
     progress.observe(observation(opening_flags=OpeningFlags(True,False,True)))
     assert not progress.completed
 
-def test_injured_overworld_offers_heal_and_rival_goal():
+def test_an_injured_party_near_oldale_is_offered_the_centre():
+    """The only way to heal: the open-world menu has no nurse to walk up to."""
     member=PartyMember('Treecko',5,10,20,'Healthy',(MoveState('Pound',30,35),))
-    actions=legal_actions(observation(party=(member,)))
-    assert {a.id for a in actions} == {'heal:oldale','goal:rival'}
+    assert 'heal:oldale' in {a.id for a in legal_actions(observation(party=(member,)))}
 
 
 def test_spent_pp_alone_is_not_an_injury():
@@ -73,7 +73,7 @@ def test_run_is_offered_only_when_the_observer_confirms_it_is_legal():
 
 def test_fully_healed_party_has_no_redundant_center_choice():
     member=PartyMember('Treecko',5,20,20,'Healthy',(MoveState('Pound',35,35),))
-    assert [a.id for a in legal_actions(observation(party=(member,)))] == ['goal:rival']
+    assert [a.id for a in legal_actions(observation(party=(member,)))] == []
 
 
 def test_door_animation_is_not_counted_as_navigation_stall(monkeypatch):

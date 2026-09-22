@@ -9,7 +9,7 @@ export type Request =
   | { id: string; type: 'ping' }
   | {
       id: string
-      type: 'choose'
+      type: 'choose' | 'plan'
       state: JsonObject
       options: Record<string, string>
       instructions: string
@@ -18,6 +18,8 @@ export type Request =
 
 export type Response =
   | { id: string; type: 'pong'; schemaVersion: number }
+  | { id: string; type: 'plan'; text: string; model: string; latencyMs: number;
+      usage: { inputTokens: number | undefined; outputTokens: number | undefined } }
   | {
       id: string
       type: 'choice'
@@ -36,7 +38,7 @@ export function parseRequest(line: string): Request {
   const { id, type } = parsed as Record<string, unknown>
   if (typeof id !== 'string' || id === '') throw new Error('request id must be a nonempty string')
   if (type === 'ping') return { id, type }
-  if (type !== 'choose') throw new Error(`unknown request type: ${String(type)}`)
+  if (type !== 'choose' && type !== 'plan') throw new Error(`unknown request type: ${String(type)}`)
 
   const { state, options, instructions, timeoutMs } = parsed as Record<string, unknown>
   if (typeof state !== 'object' || state === null || Array.isArray(state)) {
@@ -54,7 +56,7 @@ export function parseRequest(line: string): Request {
   }
   return {
     id,
-    type: 'choose',
+    type,
     state: state as JsonObject,
     options: options as Record<string, string>,
     instructions,

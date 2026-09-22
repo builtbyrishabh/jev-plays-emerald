@@ -52,6 +52,7 @@ class ViewerStatePublisher:
             "mode": mode.name(),
             "paused": mode.paused,
             "goal": _current_goal(observation, completed),
+            "planner": getattr(mode, "planner_view", None),
             "status": {
                 "phase": phase,
                 "context_id": status.context_id,

@@ -217,6 +217,78 @@ def test_one_model_request_stays_neutral_until_its_choice_is_ready(mode_runtime)
     assert telemetry.snapshot.last_decision.source == "model"
 
 
+def test_planner_advice_replaces_hints_and_jev_keeps_all_choices(mode_runtime):
+    from jev_plays_emerald.planner import PlannerAdvice, PlannerMemory
+
+    mode, _, actions, worker, emulator, telemetry = mode_runtime
+    mode._planner = PlannerMemory()
+    run = mode.run()
+    try:
+        next(run)
+        assert mode.planner_view["pending"]
+        assert actions.executed == []
+        next(run)
+        assert len(worker.futures) == 1
+        assert emulator.reset_count > 0
+        worker.futures[0].set_result(PlannerAdvice("Pick the companion you prefer.", "test", TokenUsage(40, 10), 8))
+        next(run)
+        next(run)
+        events = list(map(json.loads, telemetry._path.read_text().splitlines()))
+        request = next(event for event in events if event["event"] == "request")
+        assert request["questions"]["action"]["instructions"].endswith("Pick the companion you prefer.")
+        assert "Expect the rival" not in request["questions"]["action"]["instructions"]
+        assert len(request["questions"]["action"]["criteria"]) == 3
+        worker.futures[1].set_result(_choice("starter:mudkip"))
+        next(run)
+        assert actions.executed[0].id == "starter:mudkip"
+        assert mode.planner_view["calls"] == 1
+    finally:
+        run.close()
+
+
+@pytest.mark.parametrize("invalidate", ["pause", "story"])
+def test_late_planner_advice_cannot_survive_pause_or_story_change(mode_runtime, invalidate):
+    from dataclasses import replace
+    from jev_plays_emerald.planner import PlannerAdvice, PlannerMemory
+
+    mode, reader, actions, worker, _, telemetry = mode_runtime
+    mode._planner = PlannerMemory()
+    run = mode.run()
+    try:
+        next(run)
+        if invalidate == "pause":
+            mode.set_paused(True)
+            mode.set_paused(False)
+        else:
+            reader.observation = replace(reader.observation, rival_house_state=3)
+        worker.futures[0].set_result(PlannerAdvice("stale advice", "test", TokenUsage(), 1))
+        next(run)
+        assert mode.planner_view["advice"] is None
+        assert actions.executed == []
+        events = list(map(json.loads, telemetry._path.read_text().splitlines()))
+        assert next(e for e in events if e["event"] == "planner-response")["disposition"] == "stale"
+    finally:
+        run.close()
+
+
+def test_planner_failure_pauses_without_a_silent_hint_fallback(mode_runtime):
+    from jev_plays_emerald.planner import PlannerMemory
+
+    mode, _, actions, worker, _, telemetry = mode_runtime
+    mode._planner = PlannerMemory()
+    run = mode.run()
+    try:
+        next(run)
+        worker.futures[0].set_exception(JevTimeoutError("deadline"))
+        next(run)
+        assert mode.paused
+        assert telemetry.snapshot.last_error == "Planner: deadline"
+        assert actions.executed == []
+        assert mode.planner_view["advice"] is None
+    finally:
+        run.close()
+
+
 def test_context_change_discards_late_model_choice(mode_runtime):
     mode, reader, actions, worker, _, telemetry = mode_runtime
     run = mode.run()

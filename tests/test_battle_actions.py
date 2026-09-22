@@ -1,9 +1,7 @@
-"""Step-4 battle action kinds: switch, item and catch enumeration + dispatch.
+"""The battle turn menu: moves, switching, items, catching and running.
 
-These options are spike-gated, so the verified scripted battle menu (moves and
-run only) is unchanged when the flag is off. End-to-end input flows need the
-emulator; here we pin the menu each kind produces and that every offered id has
-an executor that parses it.
+End-to-end input flows need the emulator; here we pin the menu each kind
+produces and that every offered ID has an executor that parses it.
 """
 
 from dataclasses import replace
@@ -43,26 +41,11 @@ def battle(**changes):
     return replace(base, **changes)
 
 
-@pytest.fixture
-def spike(monkeypatch):
-    monkeypatch.setenv("JEV_OPEN_WORLD_SPIKE", "1")
-
-
 def ids(observation):
     return {action.id for action in legal_actions(observation)}
 
 
-def test_flag_off_keeps_moves_and_run_only(monkeypatch):
-    monkeypatch.delenv("JEV_OPEN_WORLD_SPIKE", raising=False)
-    obs = battle(
-        party=(member(), member("Poochyena")),
-        inventory=(InventoryItem("Potion", 3, "healing"), InventoryItem("Poké Ball", 5, "catch")),
-        can_run=True,
-    )
-    assert ids(obs) == {"battle-move:0", "battle-run"}
-
-
-def test_flag_on_adds_switch_item_and_catch(spike):
+def test_the_action_phase_offers_the_whole_turn_menu():
     obs = battle(
         party=(member(), member("Poochyena")),
         inventory=(InventoryItem("Potion", 3, "healing"), InventoryItem("Poké Ball", 5, "catch")),
@@ -73,7 +56,7 @@ def test_flag_on_adds_switch_item_and_catch(spike):
     }
 
 
-def test_move_phase_still_offers_only_moves(spike):
+def test_move_phase_still_offers_only_moves():
     obs = battle(
         battle_phase="move",
         party=(member(), member("Poochyena")),
@@ -82,16 +65,16 @@ def test_move_phase_still_offers_only_moves(spike):
     assert ids(obs) == {"battle-move:0"}
 
 
-def test_switch_skips_the_active_and_any_fainted_member(spike):
+def test_switch_skips_the_active_and_any_fainted_member():
     obs = battle(party=(member(), member("Zigzagoon", hp=0), member("Wingull")))
     assert ids(obs) & {"battle-switch:0", "battle-switch:1", "battle-switch:2"} == {"battle-switch:2"}
 
 
-def test_switch_is_absent_with_a_single_pokemon(spike):
+def test_switch_is_absent_with_a_single_pokemon():
     assert not any(a.startswith("battle-switch") for a in ids(battle()))
 
 
-def test_battle_item_offers_only_usable_kinds_in_stock(spike):
+def test_battle_item_offers_only_usable_kinds_in_stock():
     obs = battle(inventory=(
         InventoryItem("Potion", 2, "healing"),
         InventoryItem("Ether", 1, "pp_recovery"),
@@ -104,7 +87,7 @@ def test_battle_item_offers_only_usable_kinds_in_stock(spike):
     assert items == {"battle-item:Potion", "battle-item:Ether", "battle-item:X Attack"}
 
 
-def test_catch_only_against_a_wild_pokemon(spike):
+def test_catch_only_against_a_wild_pokemon():
     with_balls = battle(inventory=(InventoryItem("Poké Ball", 5, "catch"),))
     assert "catch:Poké Ball" in ids(with_balls)
     # A trainer's Pokémon cannot be caught.
@@ -113,7 +96,7 @@ def test_catch_only_against_a_wild_pokemon(spike):
     assert not any(a.startswith("catch:") for a in ids(battle()))
 
 
-def test_every_offered_battle_action_has_an_executor(spike):
+def test_every_offered_battle_action_has_an_executor():
     obs = battle(
         party=(member(), member("Poochyena")),
         inventory=(InventoryItem("Potion", 3, "healing"), InventoryItem("Poké Ball", 5, "catch")),

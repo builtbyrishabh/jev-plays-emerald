@@ -1,6 +1,7 @@
 import { createInterface } from 'node:readline'
 import { schemaVersion } from './actions.ts'
 import { JevError, choose } from './jev.ts'
+import { plan } from './planner.ts'
 import { type Request, type Response, parseRequest } from './protocol.ts'
 
 /**
@@ -13,6 +14,7 @@ function send(response: Response): void {
 
 async function handle(request: Request): Promise<Response> {
   if (request.type === 'ping') return { id: request.id, type: 'pong', schemaVersion }
+  if (request.type === 'plan') return { id: request.id, type: 'plan', ...await plan(request) }
 
   const result = await choose({
     state: request.state,

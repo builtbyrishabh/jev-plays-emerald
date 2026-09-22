@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 from dataclasses import dataclass
 
@@ -10,7 +9,7 @@ from jev_plays_emerald.actions import Action, Outcome
 from jev_plays_emerald.state import MoveState, Observation, PartyMember
 
 
-def legal_actions(observation: Observation) -> tuple[Action, ...]:
+def legal_actions(observation: Observation, *, suppress_futile: bool = True) -> tuple[Action, ...]:
     if observation.game_state == "CHOOSE_STARTER" or observation.menu_phase == "starter":
         return tuple(
             Action(f"starter:{starter.casefold()}", f"Choose {starter}", observation.context_id)
@@ -30,16 +29,12 @@ def legal_actions(observation: Observation) -> tuple[Action, ...]:
             if move.pp > 0 and move.usable
         )
 
-        run = (Action("battle-run", "Attempt to escape this wild encounter", observation.context_id),)
-        if not open_world_spike_enabled():
-            if observation.can_run and observation.battle_phase == "action":
-                return moves + run
-            return moves
-        # Spike: the whole turn menu, not just moves. Switching, items, catching
-        # and running are all top-level ("action") choices; the move list is its
-        # own phase, so those extras only apply before Fight is selected.
+        # Switching, items, catching and running are all top-level ("action")
+        # choices; the move list is its own phase, so those extras only apply
+        # before Fight has been selected.
         if observation.battle_phase != "action":
             return moves
+        run = (Action("battle-run", "Attempt to escape this wild encounter", observation.context_id),)
         extras = (
             _battle_switch_actions(observation)
             + _battle_item_actions(observation)
@@ -47,7 +42,7 @@ def legal_actions(observation: Observation) -> tuple[Action, ...]:
         )
         return moves + extras + (run if observation.can_run else ())
 
-    return _opening_actions(observation)
+    return _opening_actions(observation, suppress_futile=suppress_futile)
 
 
 def _move_label(move: MoveState) -> str:
@@ -185,15 +180,18 @@ def party_needs_healing(party: tuple[PartyMember, ...]) -> bool:
     )
 
 
-_BASE_MISSION = (
+MISSION = (
     "You are playing Pokemon Emerald. Your mission, in order: get a starter Pokemon, "
-    "rescue Professor Birch, then travel north and beat your rival on Route 103. "
+    "rescue Professor Birch, then travel north and beat your rival on Route 103."
+)
+_BASE_MISSION = MISSION + (
+    " "
     "Choose exactly one legal action for the current state and treat the probabilities "
     "as your preference over the offered actions."
 )
 
 
-def decision_instructions(observation: Observation) -> str:
+def decision_instructions(observation: Observation, *, advice: str | None = None) -> str:
     """Mission text plus a hint for the situation Jev is actually deciding in.
 
     The open-world action set deliberately carries no route opinion, so the
@@ -202,7 +200,13 @@ def decision_instructions(observation: Observation) -> str:
     This nudges without deciding - every listed action stays Jev's to pick.
     """
 
-    hint = _situation_hint(observation)
+    hint = _situation_hint(observation) if advice is None else advice
+    if advice:
+        hint = (
+            "Planner advice is a persistent objective, not a fixed action. Adapt it to your "
+            "CURRENT map and recent results; skip steps already completed. You choose the "
+            "action. Prefer progress over revisiting completed locations. Planner: " + advice
+        )
     return f"{_BASE_MISSION} {hint}" if hint else _BASE_MISSION
 
 
@@ -285,9 +289,7 @@ def _situation_hint(observation: Observation) -> str:
     return ""
 
 
-def _opening_actions(observation: Observation) -> tuple[Action, ...]:
-    from modules.map_data import MapRSE
-
+def _opening_actions(observation: Observation, *, suppress_futile: bool = True) -> tuple[Action, ...]:
     def action(identifier: str, label: str) -> tuple[Action, ...]:
         return (Action(identifier, label, observation.context_id),)
 
@@ -303,47 +305,11 @@ def _opening_actions(observation: Observation) -> tuple[Action, ...]:
         return action("dialogue:advance", "Advance mandatory opening dialogue (configured nickname: none)")
     if not observation.controllable or observation.position is None:
         return ()
-    here = observation.position.map_id
-    flags = observation.opening_flags
-    if flags.defeated_rival_route103:
+    if observation.opening_flags.defeated_rival_route103:
         return ()
-    if open_world_spike_enabled():
-        # Every overworld choice becomes Jev's. Only character creation and
-        # forced cutscenes above this line stay scripted.
-        return open_world_actions(observation)
-    male = observation.player_gender == "male"
-    own1 = MapRSE.LITTLEROOT_TOWN_BRENDANS_HOUSE_1F if male else MapRSE.LITTLEROOT_TOWN_MAYS_HOUSE_1F
-    own2 = MapRSE.LITTLEROOT_TOWN_BRENDANS_HOUSE_2F if male else MapRSE.LITTLEROOT_TOWN_MAYS_HOUSE_2F
-    rival1 = MapRSE.LITTLEROOT_TOWN_MAYS_HOUSE_1F if male else MapRSE.LITTLEROOT_TOWN_BRENDANS_HOUSE_1F
-    rival2 = MapRSE.LITTLEROOT_TOWN_MAYS_HOUSE_2F if male else MapRSE.LITTLEROOT_TOWN_BRENDANS_HOUSE_2F
-    if here == MapRSE.INSIDE_OF_TRUCK.value:
-        return action("goal:leave-truck", "Step out of the moving truck")
-    if here == own1.value:
-        return action("goal:upstairs" if not flags.set_wall_clock else "goal:leave-house",
-                      "Set the bedroom clock" if not flags.set_wall_clock else "Leave home after the moving-in cutscene")
-    if here == own2.value:
-        return action("goal:clock" if not flags.set_wall_clock else "goal:downstairs",
-                      "Interact with the bedroom clock" if not flags.set_wall_clock else "Go downstairs to Mom")
-    if here == rival1.value:
-        return action("goal:rival-upstairs" if observation.rival_house_state < 3 else "goal:leave-house",
-                      "Meet the new neighbor upstairs" if observation.rival_house_state < 3 else "Leave the neighbor's house")
-    if here == rival2.value:
-        return action("goal:meet-rival" if observation.rival_house_state < 3 else "goal:downstairs",
-                      "Inspect the neighbor's Poké Ball and introduce yourself" if observation.rival_house_state < 3 else "Go downstairs")
-    if here == MapRSE.LITTLEROOT_TOWN_PROFESSOR_BIRCHS_LAB.value:
-        return action("goal:leave-lab", "Travel to Oldale and find the rival on Route 103")
-    if here == MapRSE.LITTLEROOT_TOWN.value and observation.rival_house_state < 3:
-        return action("goal:rival-house", "Introduce yourself to the neighbor")
-    if not observation.party:
-        return action("goal:birch-bag", "Investigate Birch's call for help and choose a Pokémon from his bag")
-    if here in {MapRSE.LITTLEROOT_TOWN.value, MapRSE.ROUTE101.value}:
-        return action("goal:oldale", "Travel to Oldale Town, where the Pokémon Center can restore HP, status, and PP")
-    if here in {MapRSE.OLDALE_TOWN.value, MapRSE.ROUTE103.value}:
-        choices = action("goal:rival", "Approach and challenge the rival on Route 103")
-        if party_needs_healing(observation.party):
-            choices += action("heal:oldale", "Restore the party's HP, status and PP at Oldale Pokémon Center before continuing")
-        return choices
-    return ()
+    # Every overworld choice from here is Jev's: character creation and forced
+    # cutscenes are handled above, and nothing below decides where to go.
+    return open_world_actions(observation, suppress_futile=suppress_futile)
 
 
 def dialogue_button(scripts: tuple[str, ...]) -> str:
@@ -352,17 +318,10 @@ def dialogue_button(scripts: tuple[str, ...]) -> str:
     return "A" if "LittlerootTown_ProfessorBirchsLab_EventScript_DeclineSeeingRival" in scripts else "B"
 
 
-SPIKE_FLAG = "JEV_OPEN_WORLD_SPIKE"
 MAX_OPEN_WORLD_ACTIONS = 24
 
 
-def open_world_spike_enabled() -> bool:
-    """Gate the wide-menu spike so the scripted route stays the default."""
-
-    return os.environ.get(SPIKE_FLAG) == "1"
-
-
-def open_world_actions(observation: Observation) -> tuple[Action, ...]:
+def open_world_actions(observation: Observation, *, suppress_futile: bool = True) -> tuple[Action, ...]:
     """Offer the primitives available here, with no opinion about the goal.
 
     Deliberately contains no destination the story needs: no "go fight the
@@ -428,7 +387,7 @@ def open_world_actions(observation: Observation) -> tuple[Action, ...]:
 
     choices.extend(_reachable_heal_actions(observation))
 
-    futile = recently_futile(observation)
+    futile = recently_futile(observation) if suppress_futile else set()
     usable = [choice for choice in choices if choice.id not in futile]
     # Never empty the menu: a suppressed action beats no action at all.
     choices = usable or choices

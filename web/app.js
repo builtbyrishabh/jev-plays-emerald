@@ -157,6 +157,13 @@ function render(state) {
   text("phase-detail", view.phase.detail);
   document.getElementById("phase-dot").className = `phase-dot ${view.phase.tone}`;
   text("goal", state.goal ?? "Waiting for the first game observation");
+  document.getElementById("planner-panel").hidden = !state.planner;
+  if (state.planner) {
+    const planner = state.planner;
+    text("planner-meta", `${planner.model} · ${planner.calls} calls · ${planner.pending ? "Planning…" : planner.reason ?? "Ready"}`);
+    text("planner-advice", planner.advice ?? "Waiting for the first objective");
+    if (planner.pending) text("phase-detail", "Planner is reviewing the game; Jev chooses next");
+  }
   text("active-action", state.active_action?.label ?? "None");
   const latency = state.status?.last_decision?.latency_ms;
   text("latency", Number.isFinite(latency) ? `${Math.round(latency)} ms` : "—");

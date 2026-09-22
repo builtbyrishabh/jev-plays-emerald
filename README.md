@@ -2,7 +2,7 @@
 
 Watch Jev play a real Pokémon Emerald game, from the configured New Game opening through the first Route 103 rival battle.
 
-Jev chooses a starter, usable battle moves, and whether to heal or continue where both are available. Python exposes legal actions and reuses PokéBot Gen3 navigation, menus, healing, and emulator inputs. Mandatory introductory steps and dialogue are deterministic. This is a guided opening agent, not an unrestricted exploration agent.
+Jev chooses every move of the game: which door to walk through, who to talk to, which starter to take, and how to fight. Python enumerates what is mechanically possible on the current map - its exits, people and signs - and reuses PokéBot Gen3 navigation, menus, healing, and emulator inputs to carry the choice out. Character creation, the clock menu and mandatory cutscene dialogue are deterministic. There is no hardcoded route.
 
 ## Run locally
 
@@ -23,6 +23,12 @@ Open **<http://127.0.0.1:8888/jev/index.html>** for gameplay, decisions, probabi
 
 Existing profiles and saves are preserved. Use `--profile new-run-name` for a separate fresh run. See [setup](docs/setup.md) for dependencies and checkpoint handling, and [viewer details](docs/viewer.md) for controls.
 
+For experimental LLM planning, run `pnpm --dir service install`, then prefix the
+launch command with `JEV_PLANNER_MODEL=openai/gpt-5.6-sol`. The planner replaces
+authored route hints with an objective and intervenes after three repeated
+overworld attempts without story progress. Jev still chooses the actions.
+Advice and call count appear in the viewer. See [planner behavior and limits](docs/planner-proposal.md).
+
 ## Scope and evidence
 
 The implementation has completed a continuous input-only New Game-to-rival run with real Jev decisions. Completion requires the actual rival battle victory and a newly set story flag. Loading a completed checkpoint does not count as a new win.
@@ -36,4 +42,4 @@ See [measured results](docs/results.md) for repeatability, failures, costs, and 
 - [TypeScript decision service](docs/decision-service.md)
 - [Replaying recorded decisions](docs/replay.md)
 
-The app uses pinned mGBA/PokéBot Gen3, Python, and one local server with plain HTML/CSS/JavaScript. There is no live Codex planner, database, or additional backend service.
+The app uses pinned mGBA/PokéBot Gen3, Python, and one local server with plain HTML/CSS/JavaScript. Optional LLM planning uses the existing local TypeScript decision-service child and AI Gateway; there is no live Codex session or database in the gameplay loop.

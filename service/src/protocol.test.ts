@@ -20,11 +20,15 @@ test('a ping needs nothing but an id', () => {
   assert.deepEqual(parseRequest('{"id":"p1","type":"ping"}'), { id: 'p1', type: 'ping' })
 })
 
+test('a planner request stays a planner request', () => {
+  assert.equal(parseRequest(JSON.stringify({ ...choose, type: 'plan' })).type, 'plan')
+})
+
 test('a malformed request is rejected before it can reach the gateway', () => {
   const rejected = [
     '[]',
     '{"type":"choose"}',
-    JSON.stringify({ ...choose, type: 'plan' }),
+    JSON.stringify({ ...choose, type: 'teleport' }),
     JSON.stringify({ ...choose, state: [1, 2] }),
     JSON.stringify({ ...choose, instructions: 7 }),
     JSON.stringify({ ...choose, options: { 'walk:0:10:5:3': 42 } }),

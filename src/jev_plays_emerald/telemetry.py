@@ -205,6 +205,10 @@ class DecisionTelemetry:
         )
         self._append({"event": "discarded", "reason": message})
 
+    def planner_event(self, event: str, **fields: object) -> None:
+        # Planner usage stays separate: Jev's token price does not apply to it.
+        self._append({"event": event, **fields})
+
     def _append(self, event: dict[str, object]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._path.open("a", encoding="utf-8") as output:

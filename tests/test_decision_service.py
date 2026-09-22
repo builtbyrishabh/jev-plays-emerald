@@ -75,6 +75,30 @@ def test_handshake_reports_the_action_schema_version(tmp_path):
         client.close()
 
 
+@pytest.mark.parametrize("advice", ["Inspect the nearby object.", "", 42])
+def test_planner_transport_validates_advice_and_keeps_usage_separate(tmp_path, monkeypatch, advice):
+    monkeypatch.setenv("JEV_PLANNER_MODEL", "test/model")
+    body = f'''
+        assert request["type"] == "plan"
+        reply({{"id": request["id"], "type": "plan", "text": {advice!r},
+               "model": "test/model", "latencyMs": 12,
+               "usage": {{"inputTokens": 100, "outputTokens": 20}}}})
+    '''
+    client = service(tmp_path, body)
+    try:
+        client.start()
+        call = client.plan(state=STATE, options=OPTIONS, instructions="mission")
+        if isinstance(advice, str) and advice:
+            result = asyncio.run(call)
+            assert result.text == advice
+            assert result.usage.input_tokens == 100
+        else:
+            with pytest.raises(ValueError, match="invalid planner"):
+                asyncio.run(call)
+    finally:
+        client.close()
+
+
 def test_a_choice_round_trips_with_its_distribution(tmp_path):
     client = service(tmp_path, CHOICE)
     try:
