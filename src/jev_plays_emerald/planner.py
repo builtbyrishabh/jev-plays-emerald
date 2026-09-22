@@ -163,7 +163,7 @@ class PlannerMemory:
         attempt = self._attempts.setdefault(key, _Attempt())
         attempt.count += 1
         attempt.last_result = reason or outcome.value
-        if attempt.count == 3:
+        if attempt.count == 3 and outcome is not Outcome.SUCCESS:
             self.ledger.record_dead_end(
                 stage,
                 before.position.map_id,

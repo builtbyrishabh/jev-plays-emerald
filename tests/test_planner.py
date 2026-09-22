@@ -100,6 +100,28 @@ def test_decision_brief_counts_failed_choices_and_keeps_other_maps_separate(tmp_
     assert other_brief["legal_actions"][0]["attempts_without_progress"] == 0
 
 
+def test_successful_travel_can_trigger_help_without_becoming_a_dead_end(tmp_path):
+    path = tmp_path / "memory.json"
+    obs = observation((1, 4))
+    memory = PlannerMemory(ledger=EvidenceLedger(path))
+    memory.sync_progress(obs)
+    exit_lab = Action(
+        "walk:1:4:6:12", "Go through the doorway into Littleroot Town", "ctx"
+    )
+
+    for _ in range(3):
+        memory.record(obs, obs, exit_lab, Outcome.SUCCESS, None)
+
+    assert memory.reason(obs) == "three repeated attempts without story progress"
+    assert EvidenceLedger(path).summary("meet_neighbor", (1, 4))["dead_ends"] == []
+    assert memory.decision_brief(obs, (exit_lab,), None)["legal_actions"][0] == {
+        "action_id": exit_lab.id,
+        "label": exit_lab.label,
+        "attempts_without_progress": 3,
+        "last_result": "success",
+    }
+
+
 def test_brief_includes_exact_validated_planner_destination(tmp_path):
     action = Action("walk:0:9:14:8", "Enter May's House at (14, 8)", "ctx")
     planner_advice = PlannerAdvice(
