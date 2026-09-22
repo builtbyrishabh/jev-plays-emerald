@@ -9,12 +9,13 @@ from typing import Any
 
 _SCHEMA_VERSION = 1
 _MAX_ENTRIES = 200
+DEFAULT_LEDGER_PATH = Path(__file__).resolve().parents[2] / "runs" / "planner-memory.json"
 
 
 class EvidenceLedger:
     """Persist observed dead ends and the outcomes of planner hypotheses."""
 
-    def __init__(self, path: Path = Path("runs/planner-memory.json")) -> None:
+    def __init__(self, path: Path = DEFAULT_LEDGER_PATH) -> None:
         self.path = path
         self._data = self._load()
 

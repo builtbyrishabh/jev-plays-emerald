@@ -1,4 +1,15 @@
+from pathlib import Path
+
 from jev_plays_emerald.planner_memory import EvidenceLedger
+
+
+PROJECT_ROOT = Path(__file__).parents[1]
+
+
+def test_default_ledger_path_is_anchored_to_the_project(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    assert EvidenceLedger().path == PROJECT_ROOT / "runs" / "planner-memory.json"
 
 
 def test_verified_lesson_survives_a_fresh_ledger(tmp_path):
