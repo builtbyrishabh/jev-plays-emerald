@@ -36,6 +36,14 @@ class PlannerAdvice:
             f"Avoid: {self.avoid} Success looks like: {self.success_signal}."
         )
 
+    @property
+    def follow_up_text(self) -> str:
+        return (
+            "Planner follow-up: the exact first action has already been completed. "
+            f"Continue the remaining goal using only the current legal actions: {self.hint} "
+            f"Avoid: {self.avoid} Success looks like: {self.success_signal}."
+        )
+
 
 def story_progress(observation: Observation) -> tuple:
     return (
@@ -179,6 +187,7 @@ class PlannerMemory:
         observation: Observation,
         actions: tuple[Action, ...],
         advice: PlannerAdvice | None,
+        follow_up: PlannerAdvice | None = None,
     ) -> dict[str, Any]:
         stage = stage_key(observation)
         map_id = observation.position.map_id if observation.position else None
@@ -191,6 +200,11 @@ class PlannerMemory:
                 self._action_summary(observation, action) for action in actions
             ],
             "planner_hint": asdict(advice) if advice is not None else None,
+            "planner_follow_up": (
+                {**asdict(follow_up), "status": "first_action_completed"}
+                if follow_up is not None
+                else None
+            ),
         }
 
     def planner_context(
@@ -198,14 +212,15 @@ class PlannerMemory:
         observation: Observation,
         actions: tuple[Action, ...],
         advice: PlannerAdvice | None,
+        follow_up: PlannerAdvice | None = None,
     ) -> dict[str, Any]:
-        brief = self.decision_brief(observation, actions, advice)
+        brief = self.decision_brief(observation, actions, advice, follow_up)
         return {
             "trigger": self.reason(observation),
             "walkthroughKnowledge": brief["confirmed_facts"],
             "deadEnds": brief["avoid_repeating"],
             "legalActions": brief["legal_actions"],
-            "previousAdvice": brief["planner_hint"],
+            "previousAdvice": brief["planner_hint"] or brief["planner_follow_up"],
         }
 
     def _action_summary(

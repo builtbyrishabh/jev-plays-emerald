@@ -112,6 +112,7 @@ class JevEmeraldMode(BotMode):
         self._planner = PlannerMemory() if planner_model() else None
         self._pending_plan: _PendingPlan | None = None
         self._advice: PlannerAdvice | None = None
+        self._follow_up_advice: PlannerAdvice | None = None
         self._planner_calls = 0
         self._planner_reason: str | None = None
         self._action_observation: Observation | None = None
@@ -120,10 +121,12 @@ class JevEmeraldMode(BotMode):
     def planner_view(self) -> dict | None:
         if self._planner is None:
             return None
+        visible_advice = self._advice or self._follow_up_advice
         return {
             "model": planner_model(), "calls": self._planner_calls,
             "pending": self._pending_plan is not None, "reason": self._planner_reason,
-            "advice": asdict(self._advice) if self._advice else None,
+            "advice": asdict(visible_advice) if visible_advice else None,
+            "phase": "exact_action" if self._advice else "follow_up" if self._follow_up_advice else None,
         }
 
     @staticmethod
@@ -305,6 +308,7 @@ class JevEmeraldMode(BotMode):
         if self._planner is not None and observation is not None:
             if self._planner.sync_progress(observation):
                 self._advice = None
+                self._follow_up_advice = None
         with self._state_lock:
             if (
                 self._paused
@@ -342,7 +346,7 @@ class JevEmeraldMode(BotMode):
             return
         state = asdict(observation)
         state["planner_context"] = self._planner.planner_context(
-            observation, actions, self._advice
+            observation, actions, self._advice, self._follow_up_advice
         )
         options = {action.id: action.label for action in actions}
         mission = MISSION
@@ -386,7 +390,7 @@ class JevEmeraldMode(BotMode):
                 self._telemetry.planner_event("planner-error", message=str(error), stale=stale,
                                               call=self._planner_calls)
                 if not stale:
-                    if self._advice is None:
+                    if self._advice is None and self._follow_up_advice is None:
                         self._paused = True
                         self._decision_generation += 1
                         self._telemetry.error(f"Planner: {error}")
@@ -400,6 +404,7 @@ class JevEmeraldMode(BotMode):
             if not stale and self._planner is not None:
                 self._planner.accept(pending.observation, advice)
                 self._advice = advice
+                self._follow_up_advice = None
         return True
 
     def _start_model_request(
@@ -419,7 +424,7 @@ class JevEmeraldMode(BotMode):
                 action.id != self._advice.destination_action_id for action in actions
             )
         ):
-            self._planner.expire_advice()
+            self._follow_up_advice = self._advice
             self._advice = None
         state = asdict(observation)
         state["observation_note"] = (
@@ -428,13 +433,20 @@ class JevEmeraldMode(BotMode):
         )
         if self._planner is not None:
             state["decision_brief"] = self._planner.decision_brief(
-                observation, actions, self._advice
+                observation, actions, self._advice, self._follow_up_advice
             )
         options: dict[str, JsonValue | None] = {
             action.id: action.label for action in actions
         }
         instructions = decision_instructions(
-            observation, advice=self._advice.text if self._advice is not None else None,
+            observation,
+            advice=(
+                self._advice.text
+                if self._advice is not None
+                else self._follow_up_advice.follow_up_text
+                if self._follow_up_advice is not None
+                else None
+            ),
             authored_hints=self._planner is None and authored_hints_enabled(),
         )
         with self._state_lock:

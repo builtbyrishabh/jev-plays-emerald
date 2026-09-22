@@ -301,6 +301,13 @@ const activePlanner = plannerPanelView({ advice: {
 if (activePlanner.location !== "May's House at (14, 8)" || activePlanner.success !== 'rival state changes') {
   throw new Error(`structured planner fields missing: ${JSON.stringify(activePlanner)}`);
 }
+const followUpPlanner = plannerPanelView({ phase: 'follow_up', advice: {
+  hint: 'Go upstairs and inspect the floor item.', location: "May's House entrance at (14, 8)",
+  avoid: 'Do not leave the house.', success_signal: 'May appears',
+} });
+if (!followUpPlanner.hint.startsWith('Continue:') || !followUpPlanner.location.startsWith('Completed first action at:')) {
+  throw new Error(`follow-up planner state is unclear: ${JSON.stringify(followUpPlanner)}`);
+}
 """
 
     subprocess.run(

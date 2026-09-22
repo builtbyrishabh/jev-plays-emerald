@@ -454,7 +454,7 @@ def test_mode_rejects_planner_destination_outside_pending_menu(mode_runtime):
         run.close()
 
 
-def test_consumed_hint_is_not_sent_backwards_after_its_destination_disappears(
+def test_completed_hint_action_becomes_forward_only_follow_up_guidance(
     mode_runtime,
 ):
     mode, reader, _, worker, _, telemetry = mode_runtime
@@ -488,7 +488,14 @@ def test_consumed_hint_is_not_sent_backwards_after_its_destination_disappears(
         if json.loads(line)["event"] == "request"
     )
     assert request["state"]["decision_brief"]["planner_hint"] is None
-    assert mode.planner_view["advice"] is None
+    follow_up = request["state"]["decision_brief"]["planner_follow_up"]
+    assert follow_up["hint"] == "Leave the lab for May's House."
+    assert follow_up["status"] == "first_action_completed"
+    instructions = request["questions"]["action"]["instructions"]
+    assert "exact first action has already been completed" in instructions
+    assert "Leave the lab for May's House" in instructions
+    assert "Exact location" not in instructions
+    assert mode.planner_view["phase"] == "follow_up"
     assert len(worker.futures) == 1
 
 

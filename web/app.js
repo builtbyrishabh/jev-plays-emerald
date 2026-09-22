@@ -66,9 +66,10 @@ function actionPanelView(state) {
 
 function plannerPanelView(planner) {
   const advice = planner?.advice;
+  const followUp = planner?.phase === "follow_up";
   return {
-    hint: advice?.hint ?? "Waiting until Jev repeats an action three times",
-    location: advice?.location ?? "—",
+    hint: advice ? `${followUp ? "Continue: " : ""}${advice.hint}` : "Waiting until Jev repeats an action three times",
+    location: advice ? `${followUp ? "Completed first action at: " : ""}${advice.location}` : "—",
     avoid: advice?.avoid ?? "—",
     success: advice?.success_signal ?? "—",
   };

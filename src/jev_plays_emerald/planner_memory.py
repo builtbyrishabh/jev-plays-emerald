@@ -109,11 +109,22 @@ class EvidenceLedger:
         hint: str,
         action_id: str,
     ) -> None:
+        encoded_map = self._encoded_map(map_id)
+        for entry in reversed(self._data["entries"]):
+            if (
+                entry.get("status") == "unverified"
+                and entry.get("stage") == stage
+                and entry.get("map_id") == encoded_map
+                and entry.get("action_id") == action_id
+            ):
+                entry["hint"] = hint
+                self._write()
+                return
         self._data["entries"].append(
             {
                 "status": "unverified",
                 "stage": stage,
-                "map_id": self._encoded_map(map_id),
+                "map_id": encoded_map,
                 "action_id": action_id,
                 "hint": hint,
             }

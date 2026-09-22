@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from jev_plays_emerald.planner_memory import EvidenceLedger
@@ -37,6 +38,18 @@ def test_unverified_advice_never_becomes_a_fact(tmp_path):
 
     assert summary["verified"] == []
     assert summary["rejected"] == []
+
+
+def test_repeated_unverified_advice_updates_one_pending_hypothesis(tmp_path):
+    path = tmp_path / "planner-memory.json"
+    ledger = EvidenceLedger(path)
+    ledger.record_hypothesis("meet_neighbor", (0, 9), "Enter May's House", "walk:may")
+    ledger.record_hypothesis("meet_neighbor", (0, 9), "Enter May's House, then go upstairs", "walk:may")
+
+    entries = json.loads(path.read_text())["entries"]
+
+    assert len(entries) == 1
+    assert entries[0]["hint"] == "Enter May's House, then go upstairs"
 
 
 def test_rejected_hypothesis_is_remembered_but_not_verified(tmp_path):
