@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "source": "https://bulbapedia.bulbagarden.net/wiki/Walkthrough:Pok%C3%A9mon_Emerald/Part_1",
+  "stages": {
+    "meet_neighbor": [
+      "Visit the neighbor's house, go upstairs, and inspect the item on the floor so the rival appears.",
+      "The male player is Brendan and the rival is May; the female player is May and the rival is Brendan."
+    ],
+    "rescue_birch": [
+      "After meeting the rival, leave Littleroot to the north and reach Route 101 for Birch's rescue.",
+      "Choose a starter from Birch's bag during the rescue encounter."
+    ],
+    "reach_rival": [
+      "After Birch's lab scene, cross Route 101 and Oldale Town to reach the rival on Route 103."
+    ]
+  }
+}
