@@ -188,12 +188,14 @@ def _walk_plan(action: Action) -> ExecutionPlan:
         raise ValueError(f"invalid walk action: {action.id}") from error
 
     def navigate() -> Generator[None, None, None]:
+        from modules.context import context
         from modules.memory import GameState, get_game_state
         from modules.modes.util.walking import TimedOutTryingToReachWaypointError, navigate_to
-        from modules.player import get_player_location, player_avatar_is_controllable
+        from modules.player import get_player_avatar, get_player_location, player_avatar_is_controllable
 
+        starting_location = get_player_location()
         upstream = navigate_to(destination_map, destination)
-        last_location = get_player_location()
+        last_location = starting_location
         stalled_frames = 0
         try:
             while True:
@@ -209,11 +211,22 @@ def _walk_plan(action: Action) -> ExecutionPlan:
                         raise NavigationBlocked("no navigation progress for 45 overworld frames")
                 yield
         except StopIteration:
-            return
+            pass
         except TimedOutTryingToReachWaypointError as error:
             raise NavigationBlocked(str(error)) from error
         finally:
             upstream.close()
+
+        # A warp action can be offered while the avatar is already standing on
+        # its landing tile. Upstream navigation then has no path to traverse, so
+        # step back through the doorway instead of reporting a false success.
+        doorway = (destination_map, destination)
+        if starting_location == doorway and get_player_location() == doorway:
+            opposite = {"Up": "Down", "Down": "Up", "Left": "Right", "Right": "Left"}
+            button = opposite[get_player_avatar().facing_direction]
+            while get_player_location() == doorway:
+                context.emulator.hold_button(button)
+                yield
 
     return ExecutionPlan(
         navigate,
