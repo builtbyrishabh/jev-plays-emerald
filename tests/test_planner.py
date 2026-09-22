@@ -155,6 +155,25 @@ def test_brief_reuses_cross_run_dead_ends(tmp_path):
     assert brief["avoid_repeating"][0]["action_id"] == "talk:1"
 
 
+def test_brief_sends_verified_cross_run_lessons_to_both_models(tmp_path):
+    path = tmp_path / "m.json"
+    ledger = EvidenceLedger(path)
+    ledger.record_hypothesis(
+        "meet_neighbor", (1, 1), "Inspect the wall clock", "interact:5:1"
+    )
+    ledger.verify_hypothesis(
+        "meet_neighbor", "interact:5:1", "story_progress:set_wall_clock"
+    )
+    memory = PlannerMemory(ledger=EvidenceLedger(path))
+    obs = observation((1, 1))
+
+    brief = memory.decision_brief(obs, (), None)
+    planner_context = memory.planner_context(obs, (), None)
+
+    assert brief["verified_lessons"][0]["action_id"] == "interact:5:1"
+    assert planner_context["verifiedLessons"] == brief["verified_lessons"]
+
+
 def test_only_a_followed_hint_is_verified_on_story_progress(tmp_path):
     path = tmp_path / "m.json"
     obs = observation((0, 9))

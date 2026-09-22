@@ -195,6 +195,7 @@ class PlannerMemory:
         return {
             "current_goal": stage.replace("_", " "),
             "confirmed_facts": list(knowledge_for(observation)),
+            "verified_lessons": saved["verified"],
             "avoid_repeating": saved["dead_ends"] + saved["rejected"],
             "legal_actions": [
                 self._action_summary(observation, action) for action in actions
@@ -218,6 +219,7 @@ class PlannerMemory:
         return {
             "trigger": self.reason(observation),
             "walkthroughKnowledge": brief["confirmed_facts"],
+            "verifiedLessons": brief["verified_lessons"],
             "deadEnds": brief["avoid_repeating"],
             "legalActions": brief["legal_actions"],
             "previousAdvice": brief["planner_hint"] or brief["planner_follow_up"],
