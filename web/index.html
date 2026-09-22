@@ -32,50 +32,59 @@
           </div>
         </section>
 
-        <aside class="decision-panel" aria-label="Jev decision status">
+        <aside class="decision-panel" aria-label="Agent decisions">
           <section class="status-card">
+            <div class="section-heading"><p class="eyebrow">Inside the decision</p><span class="agent-badge">JEV / PLAYER</span></div>
             <div class="status-row">
               <span id="phase-dot" class="phase-dot idle" aria-hidden="true"></span>
-              <div>
-                <p id="phase-label" class="phase-label">Starting</p>
-                <p id="phase-detail" class="muted">Waiting for agent state</p>
-              </div>
+              <div><p id="phase-label" class="phase-label">Starting</p><p id="phase-detail" class="muted">Waiting for agent state</p></div>
             </div>
-            <p class="section-label">Current goal</p>
+            <p class="section-label">The mission</p>
             <p id="goal" class="goal">Waiting for the first game observation</p>
-            <div class="metric-row">
-              <div><span class="section-label">Active action</span><strong id="active-action">None</strong></div>
-              <div><span class="section-label">Latency</span><strong id="latency">—</strong></div>
+            <div class="run-metrics">
+              <div><strong id="decision-count">—</strong><span>AI decisions</span></div>
+              <div><strong id="option-count">0</strong><span>Options now</span></div>
+              <div><strong id="planner-count">—</strong><span>Planner calls</span></div>
             </div>
+            <div class="selected-action"><span class="section-label" id="active-label">Current action</span><strong id="active-action">Waiting for a choice</strong><span id="latency" class="muted"></span></div>
           </section>
 
           <section class="panel-section">
-            <div class="section-heading">
-              <h2 id="actions-heading">Available actions</h2>
-              <span id="probability-note" class="muted">No decision yet</span>
-            </div>
+            <div class="section-heading"><h2 id="actions-heading">Available actions</h2><span id="probability-note" class="muted">Awaiting a choice</span></div>
             <div id="actions" class="actions"><p class="empty">No meaningful choice right now.</p></div>
+            <p class="section-footnote">Jev’s preferences · not success probabilities</p>
           </section>
 
-          <section class="panel-section hp-section">
-            <h2>Battle state</h2>
+          <section id="planner-panel" class="panel-section planner-card">
+            <div class="section-heading"><h2 id="planner-heading">Luna’s hint</h2><span class="agent-badge">ADVISOR</span></div>
+            <p id="planner-meta" class="muted">Planner not enabled</p>
+            <p id="planner-advice">Jev is choosing without planner guidance.</p>
+            <details id="planner-details" hidden>
+              <summary>Where to go &amp; what to watch for</summary>
+              <dl>
+              <div><dt>Go to</dt><dd id="planner-location"></dd></div>
+              <div><dt>Avoid</dt><dd id="planner-avoid"></dd></div>
+              <div><dt>Look for</dt><dd id="planner-success"></dd></div>
+              </dl>
+            </details>
+          </section>
+
+          <details class="panel-section recent-section">
+            <summary>Decision timeline <span class="muted">Latest 50 choices</span></summary>
+            <ol id="recent" class="recent-list"><li class="empty">No choices yet.</li></ol>
+            <p class="section-footnote">Latest first · totals cover this run</p>
+          </details>
+
+          <details class="panel-section game-details">
+            <summary>Battle &amp; opening progress</summary>
             <div id="party" class="hp-list"><p class="empty">No party data yet.</p></div>
             <div id="opponent" class="hp-list"></div>
-          </section>
-
-          <section class="panel-section">
-            <h2>Opening progress</h2>
             <ol id="progress" class="progress-list">
               <li data-step="starter"><span></span>Choose starter</li>
               <li data-step="rescue"><span></span>Rescue Birch</li>
               <li data-step="rival"><span></span>Defeat rival</li>
             </ol>
-          </section>
-
-          <section class="panel-section recent-section">
-            <h2>Recent choices</h2>
-            <ol id="recent" class="recent-list"><li class="empty">No choices yet.</li></ol>
-          </section>
+          </details>
         </aside>
       </div>
     </main>

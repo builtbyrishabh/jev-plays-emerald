@@ -293,3 +293,34 @@ def test_bootstrap_migrates_matching_plugin_copy_to_source_link(
     plugin = pokebot / "plugins" / "jev_emerald.py"
     assert plugin.is_symlink()
     assert plugin.resolve() == project / "plugins" / "jev_emerald.py"
+
+
+def test_ai_decision_count_excludes_automatic_actions_and_survives_observations(tmp_path):
+    from jev_plays_emerald.telemetry import DecisionTelemetry
+
+    telemetry = DecisionTelemetry(tmp_path / "decisions.jsonl")
+    telemetry.selected(context_id="one", source="model", action_id="talk")
+    telemetry.selected(context_id="two", source="deterministic", action_id="continue")
+    telemetry.observe("three", ())
+    telemetry.pending(context_id="three", attempt=2)
+    assert telemetry.snapshot.decision_count == 1
+    telemetry.selected(context_id="three", source="model", action_id="walk")
+    assert telemetry.snapshot.decision_count == 2
+
+
+def test_timeline_retains_labels_and_resets_for_new_run(plugin_module):
+    from dataclasses import replace
+
+    publisher = plugin_module.ViewerStatePublisher()
+    mode = _mode_view()
+    first = publisher.build(mode)
+    mode.status = replace(mode.status, context_id="next", available_actions=())
+    next_frame = publisher.build(mode)
+    assert next_frame["recent_choices"] == first["recent_choices"]
+    assert next_frame["status"]["last_decision"]["labels"]["battle-move:0"] == "Use Tackle"
+
+    fresh = _mode_view()
+    fresh.status = AgentStatus()
+    restarted = publisher.build(fresh)
+    assert restarted["recent_choices"] == []
+    assert restarted["decision_count"] == 0

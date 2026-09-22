@@ -39,6 +39,7 @@ class DecisionRecord:
 
 @dataclass(frozen=True)
 class AgentStatus:
+    decision_count: int = 0
     phase: str = "idle"
     context_id: str | None = None
     available_actions: tuple[tuple[str, str], ...] = ()
@@ -126,6 +127,7 @@ class DecisionTelemetry:
             phase="selected",
             pending_attempt=None,
             last_decision=decision,
+            decision_count=self._snapshot.decision_count + (source == "model"),
             last_error=None,
         )
         self._append({"event": "decision", **asdict(decision)})

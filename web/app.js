@@ -64,6 +64,17 @@ function actionPanelView(state) {
   return { heading: "Available actions", note: "Probabilities unavailable", rows: [] };
 }
 
+function plannerPanelView(planner) {
+  const advice = planner?.advice;
+  const followUp = planner?.phase === "follow_up";
+  return {
+    hint: advice ? `${followUp ? "Continue: " : ""}${advice.hint}` : "Waiting until Jev repeats an action three times",
+    location: advice ? `${followUp ? "Completed first action at: " : ""}${advice.location}` : "—",
+    avoid: advice?.avoid ?? "—",
+    success: advice?.success_signal ?? "—",
+  };
+}
+
 function text(id, value) {
   const element = document.getElementById(id);
   if (element) element.textContent = value;
@@ -106,7 +117,8 @@ function renderActions(state) {
     container.append(empty);
     return;
   }
-  for (const action of panel.rows) {
+  const ranked = [...panel.rows].sort((a, b) => (b.probability ?? -1) - (a.probability ?? -1));
+  for (const [index, action] of ranked.entries()) {
     const probability = action.probability;
     const item = document.createElement("div");
     item.className = `action-row${action.chosen ? " chosen" : ""}`;
@@ -114,15 +126,24 @@ function renderActions(state) {
     line.className = "action-line";
     const label = document.createElement("span");
     label.textContent = action.label;
+    const rank = document.createElement("span");
+    rank.className = "action-rank";
+    rank.textContent = String(index + 1).padStart(2, "0");
     const value = document.createElement("strong");
     value.textContent = Number.isFinite(probability) ? `${(probability * 100).toFixed(1)}%` : "—";
-    line.append(label, value);
+    line.append(rank, label, value);
     const bar = document.createElement("div");
     bar.className = "probability-track";
     const fill = document.createElement("span");
     fill.style.width = Number.isFinite(probability) ? `${probability * 100}%` : "0";
     bar.append(fill);
     item.append(line, bar);
+    if (action.chosen) {
+      const badge = document.createElement("span");
+      badge.className = "choice-badge";
+      badge.textContent = "✓ Jev’s choice";
+      item.append(badge);
+    }
     container.append(item);
   }
 }
@@ -140,10 +161,10 @@ function renderRecent(choices) {
   for (const choice of [...choices].reverse()) {
     const item = document.createElement("li");
     const action = document.createElement("strong");
-    action.textContent = choice.action_id;
+    action.textContent = choice.labels?.[choice.action_id] ?? choice.action_id;
     const meta = document.createElement("span");
     const latency = Number.isFinite(choice.latency_ms) ? ` · ${Math.round(choice.latency_ms)} ms` : "";
-    meta.textContent = `${choice.source}${latency}`;
+    meta.textContent = `${choice.source === "model" ? "Jev" : "Automatic"}${latency}`;
     item.append(action, meta);
     container.append(item);
   }
@@ -157,9 +178,28 @@ function render(state) {
   text("phase-detail", view.phase.detail);
   document.getElementById("phase-dot").className = `phase-dot ${view.phase.tone}`;
   text("goal", state.goal ?? "Waiting for the first game observation");
-  text("active-action", state.active_action?.label ?? "None");
+  text("decision-count", Number.isInteger(state.decision_count) ? state.decision_count.toLocaleString() : "—");
+  text("option-count", (state.available_actions ?? []).length);
+  text("planner-count", state.planner?.calls ?? "—");
+  text("planner-heading", state.planner?.model?.includes("luna") || !state.planner ? "Luna’s hint" : "Planner’s hint");
+  text("planner-meta", "Planner not enabled");
+  text("planner-advice", "Jev is choosing without planner guidance.");
+  document.getElementById("planner-details").hidden = !state.planner?.advice;
+  if (state.planner) {
+    const planner = state.planner;
+    const panel = plannerPanelView(planner);
+    text("planner-meta", `${planner.pending ? "Reviewing the game…" : planner.advice ? "Guidance active" : "On standby"} · ${planner.model}`);
+    text("planner-advice", panel.hint);
+    text("planner-location", panel.location);
+    text("planner-avoid", panel.avoid);
+    text("planner-success", panel.success);
+    if (planner.pending) text("phase-detail", "Planner is reviewing the game; Jev chooses next");
+  }
+  const last = state.status?.last_decision;
+  text("active-label", state.active_action ? "Current action" : "Last choice");
+  text("active-action", state.active_action?.label ?? last?.labels?.[last.action_id] ?? last?.action_id ?? "Waiting for a choice");
   const latency = state.status?.last_decision?.latency_ms;
-  text("latency", Number.isFinite(latency) ? `${Math.round(latency)} ms` : "—");
+  text("latency", Number.isFinite(latency) ? `${Math.round(latency)} ms to decide` : "");
   text("game-state", state.observation?.game_state ?? "Waiting for game");
   const position = state.observation?.position;
   text("position", position ? `Map ${position.map_id.join(".")} · ${position.coordinates.join(", ")}` : "—");
@@ -169,6 +209,7 @@ function render(state) {
   control.dataset.paused = String(Boolean(state.paused));
 
   renderActions(state);
+
   const party = document.getElementById("party");
   party.replaceChildren();
   for (const member of state.observation?.party ?? []) renderHp(party, member, "Party");
@@ -232,4 +273,4 @@ if (typeof document !== "undefined") {
   window.setInterval(refresh, 250);
 }
 
-if (typeof module !== "undefined") module.exports = { actionPanelView, buildViewModel };
+if (typeof module !== "undefined") module.exports = { actionPanelView, buildViewModel, plannerPanelView };
