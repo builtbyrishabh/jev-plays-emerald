@@ -129,12 +129,10 @@ class JevEmeraldMode(BotMode):
     def planner_view(self) -> dict | None:
         if self._planner is None:
             return None
-        visible_advice = self._advice
         return {
             "model": planner_model(), "calls": self._coaching.calls,
             "pending": self._pending_plan is not None, "reason": self._planner_reason,
-            "advice": asdict(visible_advice) if visible_advice else None,
-            "phase": "exact_action" if self._advice else None,
+            "advice": asdict(self._advice) if self._advice else None,
             "budget": self._coaching.budget,
             "interventions": self._coaching.interventions,
         }
@@ -194,13 +192,6 @@ class JevEmeraldMode(BotMode):
                 self._pending_action = None
         if paused:
             self._telemetry.pause()
-
-    def resume_interrupted(self) -> bool:
-        action = self._executor.revalidate_interrupted(self._available_actions)
-        if action is None:
-            return False
-        self.submit_action(action)
-        return True
 
     def run(self) -> Generator[None, None, None]:
         if context.emulator is not None:

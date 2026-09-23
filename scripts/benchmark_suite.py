@@ -92,11 +92,10 @@ def main(argv: list[str] | None = None) -> int:
     manifest = {"created_at": datetime.now(timezone.utc).isoformat(),
                 "git_head": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
                 "source_sha256": fingerprint, "settings": settings, "schedule": runs, "jobs": args.jobs,
-                "decision_model": "typesafe-ai/jev", "luna_model": "gpt-5.6-luna",
-                "planner_backend": "codex", "authored_hints": False, "suppress_futile": False,
+                "decision_model": "typesafe-ai/jev", "luna_model": "openai/gpt-5.6-luna",
+                "authored_hints": False, "suppress_futile": False,
                 "memory": "fresh", "checkpoint": False,
-                "runtime": {"python": sys.version, "node": subprocess.check_output(["node", "--version"], text=True).strip(),
-                            "codex": subprocess.check_output(["codex", "--version"], text=True).strip()}}
+                "runtime": {"python": sys.version, "node": subprocess.check_output(["node", "--version"], text=True).strip()}}
     if args.rom:
         manifest["rom_sha256"] = hashlib.sha256(args.rom.read_bytes()).hexdigest()
     create_manifest(args.output, manifest)

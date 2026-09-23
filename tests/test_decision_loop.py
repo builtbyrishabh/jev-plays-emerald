@@ -8,6 +8,7 @@ from types import MappingProxyType, SimpleNamespace
 
 import pytest
 
+from jev_plays_emerald.__main__ import POKEBOT_ROOT
 from jev_plays_emerald.actions import Action, Outcome
 from jev_plays_emerald.jev import (
     JevChoice,
@@ -17,7 +18,6 @@ from jev_plays_emerald.jev import (
     TokenUsage,
 )
 from jev_plays_emerald.planner import PlannerAdvice, PlannerMemory
-from jev_plays_emerald.planner_memory import EvidenceLedger
 from jev_plays_emerald.state import (
     ActiveBattler,
     MapPosition,
@@ -27,9 +27,6 @@ from jev_plays_emerald.state import (
     OpeningFlags,
     PartyMember,
 )
-
-
-POKEBOT_ROOT = Path(__file__).parents[1] / ".cache" / "pokebot-gen3"
 
 
 def _observation(
@@ -102,9 +99,6 @@ class FakeActionExecutor:
             self.current_action = None
             self.close_count += 1
 
-    def revalidate_interrupted(self, actions):
-        return None
-
 
 class ManualWorker:
     def __init__(self) -> None:
@@ -160,14 +154,14 @@ def _advice(
     )
 
 
-def _stuck_planner(reader: FakeReader, ledger_path: Path) -> PlannerMemory:
+def _stuck_planner(reader: FakeReader) -> PlannerMemory:
     reader.observation = replace(
         reader.observation, game_state="OVERWORLD", controllable=True,
         menu_phase="none", battle_phase="none",
         objects=tuple(MapObject(index, (index, 3), f"EventScript_Person{index}") for index in (1, 2, 3)),
     )
     observation = reader.observation
-    memory = PlannerMemory(ledger=EvidenceLedger(ledger_path))
+    memory = PlannerMemory()
     memory.sync_progress(observation)
     overworld = replace(
         observation,
@@ -328,7 +322,7 @@ def test_requested_name_is_confirmed_by_jev_without_a_planner_call(mode_runtime)
 
 def test_planner_advice_replaces_hints_and_jev_keeps_all_choices(mode_runtime):
     mode, reader, actions, worker, emulator, telemetry = mode_runtime
-    mode._planner = _stuck_planner(reader, telemetry._path.parent / "memory.json")
+    mode._planner = _stuck_planner(reader)
     run = mode.run()
     try:
         next(run)
@@ -378,9 +372,7 @@ def test_minimal_planner_mode_starts_with_dialogue_and_no_authored_hint(mode_run
 
 def test_jev_receives_attempt_counts_before_raw_observation(mode_runtime):
     mode, reader, _, worker, _, telemetry = mode_runtime
-    mode._planner = PlannerMemory(
-        ledger=EvidenceLedger(telemetry._path.parent / "memory.json")
-    )
+    mode._planner = PlannerMemory()
     overworld = replace(
         reader.observation,
         game_state="OVERWORLD",
@@ -412,9 +404,7 @@ def test_jev_receives_attempt_counts_before_raw_observation(mode_runtime):
 
 def test_luna_is_called_only_on_the_third_repeat(mode_runtime):
     mode, reader, _, _, _, telemetry = mode_runtime
-    mode._planner = PlannerMemory(
-        ledger=EvidenceLedger(telemetry._path.parent / "memory.json")
-    )
+    mode._planner = PlannerMemory()
     overworld = replace(
         reader.observation,
         game_state="OVERWORLD",
@@ -441,9 +431,7 @@ def test_mode_keeps_all_legal_actions_after_an_immediate_map_loop(
     from jev_plays_emerald import mode as mode_module
 
     mode, reader, _, worker, _, telemetry = mode_runtime
-    memory = PlannerMemory(
-        ledger=EvidenceLedger(telemetry._path.parent / "memory.json")
-    )
+    memory = PlannerMemory()
     downstairs = replace(
         reader.observation,
         game_state="OVERWORLD",
@@ -480,7 +468,7 @@ def test_mode_keeps_all_legal_actions_after_an_immediate_map_loop(
 @pytest.mark.parametrize("limit", ["max_calls", "max_tokens"])
 def test_exhausted_coach_budget_keeps_jev_playing_without_another_luna_call(mode_runtime, limit):
     mode, reader, _, worker, _, telemetry = mode_runtime
-    mode._planner = _stuck_planner(reader, telemetry._path.parent / "memory.json")
+    mode._planner = _stuck_planner(reader)
     setattr(mode._coaching, limit, 0)
     run = mode.run()
     try:
@@ -497,7 +485,7 @@ def test_exhausted_coach_budget_keeps_jev_playing_without_another_luna_call(mode
 
 def test_intervention_is_logged_when_jev_executes_the_hint(mode_runtime):
     mode, reader, _, worker, _, telemetry = mode_runtime
-    mode._planner = _stuck_planner(reader, telemetry._path.parent / "memory.json")
+    mode._planner = _stuck_planner(reader)
     run = mode.run()
     try:
         next(run)
@@ -516,10 +504,9 @@ def test_intervention_is_logged_when_jev_executes_the_hint(mode_runtime):
         run.close()
 
 
-def test_story_progress_verifies_active_hint_and_clears_it(mode_runtime):
+def test_story_progress_clears_active_hint(mode_runtime):
     mode, reader, _, _, _, telemetry = mode_runtime
-    ledger_path = telemetry._path.parent / "memory.json"
-    mode._planner = PlannerMemory(ledger=EvidenceLedger(ledger_path))
+    mode._planner = PlannerMemory()
     mode._planner.sync_progress(reader.observation)
     mode._advice = _advice()
     mode._planner.accept(reader.observation, mode._advice)
@@ -533,31 +520,13 @@ def test_story_progress_verifies_active_hint_and_clears_it(mode_runtime):
     try:
         next(run)
         assert mode.planner_view["advice"] is None
-        assert EvidenceLedger(ledger_path).summary("meet_neighbor", (0, 16))["verified"]
-    finally:
-        run.close()
-
-
-def test_stale_advice_writes_no_cross_run_lesson(mode_runtime):
-    mode, reader, _, worker, _, telemetry = mode_runtime
-    ledger_path = telemetry._path.parent / "memory.json"
-    mode._planner = _stuck_planner(reader, ledger_path)
-    run = mode.run()
-    try:
-        next(run)
-        reader.observation = replace(reader.observation, rival_house_state=3)
-        worker.futures[0].set_result(_advice(destination_action_id="talk:1"))
-        next(run)
-        assert EvidenceLedger(ledger_path).summary("meet_neighbor", None)["verified"] == []
     finally:
         run.close()
 
 
 def test_mode_rejects_planner_destination_outside_pending_menu(mode_runtime):
     mode, reader, _, worker, _, telemetry = mode_runtime
-    mode._planner = _stuck_planner(
-        reader, telemetry._path.parent / "memory.json"
-    )
+    mode._planner = _stuck_planner(reader)
     run = mode.run()
     try:
         next(run)
@@ -578,8 +547,7 @@ def test_completed_hint_action_returns_control_to_jev_until_another_stall(
     mode_runtime,
 ):
     mode, reader, _, worker, _, telemetry = mode_runtime
-    ledger_path = telemetry._path.parent / "memory.json"
-    mode._planner = PlannerMemory(ledger=EvidenceLedger(ledger_path))
+    mode._planner = PlannerMemory()
     lab = replace(
         reader.observation,
         game_state="OVERWORLD",
@@ -620,9 +588,7 @@ def test_completed_hint_action_returns_control_to_jev_until_another_stall(
 
 def test_unfollowed_hint_expires_when_jev_leaves_by_another_action(mode_runtime):
     mode, reader, _, worker, _, telemetry = mode_runtime
-    mode._planner = PlannerMemory(
-        ledger=EvidenceLedger(telemetry._path.parent / "memory.json")
-    )
+    mode._planner = PlannerMemory()
     lab = replace(
         reader.observation,
         game_state="OVERWORLD",
@@ -675,7 +641,7 @@ def test_story_progress_discards_active_advice_without_calling_planner(mode_runt
 @pytest.mark.parametrize("invalidate", ["pause", "story"])
 def test_late_planner_advice_cannot_survive_pause_or_story_change(mode_runtime, invalidate):
     mode, reader, actions, worker, _, telemetry = mode_runtime
-    mode._planner = _stuck_planner(reader, telemetry._path.parent / "memory.json")
+    mode._planner = _stuck_planner(reader)
     run = mode.run()
     try:
         next(run)
@@ -696,7 +662,7 @@ def test_late_planner_advice_cannot_survive_pause_or_story_change(mode_runtime, 
 
 def test_planner_failure_pauses_without_a_silent_hint_fallback(mode_runtime):
     mode, reader, actions, worker, _, telemetry = mode_runtime
-    mode._planner = _stuck_planner(reader, telemetry._path.parent / "memory.json")
+    mode._planner = _stuck_planner(reader)
     run = mode.run()
     try:
         next(run)
@@ -712,7 +678,7 @@ def test_planner_failure_pauses_without_a_silent_hint_fallback(mode_runtime):
 
 def test_failed_planner_refresh_keeps_existing_advice_and_play_continues(mode_runtime):
     mode, reader, actions, worker, _, telemetry = mode_runtime
-    mode._planner = _stuck_planner(reader, telemetry._path.parent / "memory.json")
+    mode._planner = _stuck_planner(reader)
     mode._advice = _advice("Keep leaving the lab.", destination_action_id="talk:1")
     run = mode.run()
     try:
@@ -755,7 +721,7 @@ def test_context_change_discards_late_model_choice(mode_runtime):
 @pytest.mark.parametrize("coach", [False, True])
 def test_moving_npc_keeps_same_semantic_choice_valid(mode_runtime, coach):
     mode, reader, actions, worker, _, telemetry = mode_runtime
-    memory = _stuck_planner(reader, telemetry._path.parent / "memory.json")
+    memory = _stuck_planner(reader)
     mode._planner = memory if coach else None
     run = mode.run()
     try:

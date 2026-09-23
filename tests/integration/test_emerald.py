@@ -5,8 +5,9 @@ import sys
 
 import pytest
 
+from jev_plays_emerald.__main__ import POKEBOT_ROOT
+
 PROJECT_ROOT = Path(__file__).parents[2]
-POKEBOT_ROOT = PROJECT_ROOT / ".cache" / "pokebot-gen3"
 ROM = POKEBOT_ROOT / "roms" / "Pokemon - Emerald Version (USA, Europe).gba"
 if not (POKEBOT_ROOT / "tests/states/emerald/new_game_inside_player_house.ss1").is_file() or not ROM.is_file():
     pytest.skip("run scripts/bootstrap.py and provide the supported Emerald ROM", allow_module_level=True)
@@ -108,7 +109,7 @@ class TestEmeraldActionIntegration(BotTestCase):
         outcome, executor = yield from execute(action, frame_limit=120)
 
         self.assertEqual(Outcome.FAILED, outcome)
-        self.assertIn("Could not find a path", executor.failure_reason)
+        self.assertIn("Could not find a path", executor.last_reason)
         self.assertEqual((MapRSE.LITTLEROOT_TOWN_MAYS_HOUSE_1F, (5, 6)), get_player_location())
         self.assertEqual(0, context.emulator.reset_held_buttons())
 

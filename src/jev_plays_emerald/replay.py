@@ -24,6 +24,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable
 
+from jev_plays_emerald.__main__ import POKEBOT_ROOT
 from jev_plays_emerald.actions import Outcome
 from jev_plays_emerald.jev import JevChoice
 from jev_plays_emerald.state import (
@@ -43,8 +44,6 @@ from jev_plays_emerald.state import (
 )
 from jev_plays_emerald.telemetry import JEV_INPUT_USD_PER_TOKEN
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-POKEBOT_ROOT = PROJECT_ROOT / ".cache" / "pokebot-gen3"
 
 
 @dataclass(frozen=True)
@@ -161,8 +160,6 @@ def variant(spec: str) -> tuple[str, Callable[[Situation], str]]:
         return spec, lambda situation: situation.instructions
     if spec == "current":
         return spec, _current_instructions
-    if spec == "current-minimal":
-        return spec, _current_minimal_instructions
     if spec == "mission":
         return spec, lambda situation: _mission_only(situation.instructions)
     if spec.startswith("hint:"):
@@ -210,18 +207,6 @@ def _current_instructions(situation: Situation) -> str:
     if str(POKEBOT_ROOT) not in sys.path:
         if not POKEBOT_ROOT.is_dir():
             raise RuntimeError("the `current` variant needs `python3.13 scripts/bootstrap.py`")
-        sys.path.insert(0, str(POKEBOT_ROOT))
-    from jev_plays_emerald.opening import decision_instructions
-
-    return decision_instructions(observation_from_state(situation.state))
-
-
-def _current_minimal_instructions(situation: Situation) -> str:
-    """Rebuild the current Jev prompt."""
-
-    if str(POKEBOT_ROOT) not in sys.path:
-        if not POKEBOT_ROOT.is_dir():
-            raise RuntimeError("the `current-minimal` variant needs `python3.13 scripts/bootstrap.py`")
         sys.path.insert(0, str(POKEBOT_ROOT))
     from jev_plays_emerald.opening import decision_instructions
 
@@ -502,7 +487,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--variant", action="append", default=[],
         help=(
-            "recorded | current | current-minimal | mission | hint:<text> | drop:<phrase> "
+            "recorded | current | mission | hint:<text> | drop:<phrase> "
             "(repeatable; default: current)"
         ),
     )

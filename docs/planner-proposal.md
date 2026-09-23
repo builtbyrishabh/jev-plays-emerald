@@ -6,15 +6,12 @@ route. Planner errors pause, with no silent fallback advice.
 
 ```bash
 cd service && pnpm install && cd ..
-JEV_PLANNER_BACKEND=codex JEV_PLANNER_MODEL=gpt-5.6-luna uv run --env-file .env python -m jev_plays_emerald \
+JEV_PLANNER_MODEL=openai/gpt-5.6-luna uv run --env-file .env python -m jev_plays_emerald \
   --rom "roms/Pokemon - Emerald Version (USA, Europe).gba" --profile planner-demo
 ```
 
 Use a new profile name for a fresh run. The planner setting automatically enables
-the existing TypeScript service. Jev uses `AI_GATEWAY_API_KEY`; Luna uses the
-saved Codex ChatGPT login. [Authentication and quota details](codex-planner.md).
-For explicit Luna API billing, select backend `gateway` and model
-`openai/gpt-5.6-luna` instead.
+the existing TypeScript service. Jev and Luna both use `AI_GATEWAY_API_KEY`.
 
 ## Smallest useful experiment
 
@@ -60,11 +57,9 @@ decisions and Luna is called again only after a new stall. This prevents one wro
 correction from steering several later choices. Three new non-progress attempts
 are required before another planner call.
 
-Evidence lives in versioned, atomic `runs/planner-memory.json`. Failed or
-interrupted repeated actions and followed hypotheses remain inspectable, but
-saved routes and dead ends are not replayed into Jev or Luna prompts. A database
-is unnecessary for one local process and one ROM, but would be appropriate for
-concurrent workers or cross-game storage.
+Attempt counts live only in process memory and reset on story progress. Nothing
+is persisted, so saved routes and dead ends are never replayed into Jev or Luna
+prompts, and no database is needed.
 
 Planner mode disables the old repetition-based action suppression: Jev keeps
 the same mechanically enumerated menu (still capped at 24 entries). The planner
@@ -74,7 +69,7 @@ The viewer shows model, call count, trigger and latest advice. JSONL
 `planner-request`, `planner-response` and `planner-error` events retain the
 context, result, staleness disposition, latency and token usage separately from
 Jev's events. Planner tokens do not use Jev's price estimate. Calls have a
-30-second gateway deadline or a 120-second Codex deadline. An initial error
+30-second gateway deadline. An initial error
 pauses the run; a failed refresh retains existing advice. Resume attempts
 planning again. Coaching only triggers while the overworld is controllable,
 never during battle or a blocking menu.
@@ -102,7 +97,7 @@ The default `first-gym` target continues after the rival. It has post-rival
 milestones, local Pokémon reference facts, shopping/field items, reachable
 centers, training, and additional menu actions. The planner remains stall-driven
 throughout the journey; it does not call Luna merely because a milestone or gym
-was reached. The ledger retains evidence for inspection.
+was reached.
 `rival` retains the earlier completion boundary and coaching defaults.
 See [capabilities and measured evidence](first-gym.md); these controls alone do
 not establish reliable autonomous first-badge completion.

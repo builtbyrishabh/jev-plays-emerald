@@ -50,23 +50,17 @@ while a request is pending, inputs stay neutral and the viewer stays responsive.
 
 ## The planner
 
-`service/src/planner.ts` uses either bounded headless Codex calls (backend `codex`)
-or `generateText` and the configured Gateway model (backend `gateway`) to
+`service/src/planner.ts` uses `generateText` and the configured Gateway model to
 return a bounded JSON recovery plan. The destination must be one of the current
 action IDs; Python validates it again after the response crosses the process
 boundary. The other fields are a concise hint, exact location, an action to avoid,
 and a visible success signal.
 
-The Codex child receives a minimal environment without API keys, uses saved
-ChatGPT authentication, and has no game controls or coding tools. Its usage
-includes CLI prompt overhead. [Configuration and verification](codex-planner.md).
-
-Python owns a 24-attempt memory and triggers planning after three repetitions or
+Python counts attempts in memory and triggers planning after three repetitions or
 eight decisions without story progress. Useful map travel, party improvement,
 healing and inventory changes reset the general counter. Advice expires after Jev
-completes its one immediate action; another call requires a new stall. A local
-atomic JSON ledger retains verified lessons and map-scoped dead ends for inspection;
-they are not replayed into model prompts. Python checks pause, context and story
+completes its one immediate action; another call requires a new stall. Nothing is
+persisted or replayed into later prompts. Python checks pause, context and story
 staleness before accepting advice; planner failures pause visibly. Planner mode
 keeps every legal alternative instead of applying the old repetition filter.
 [Behavior, launch command and limitations](planner-proposal.md).

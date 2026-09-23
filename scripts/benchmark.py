@@ -78,13 +78,11 @@ def main() -> int:
     os.environ["JEV_TARGET"] = args.target
     os.environ["JEV_PLANNER_MAX_CALLS"] = str(args.max_planner_calls)
     os.environ["JEV_PLANNER_MAX_TOKENS"] = str(args.max_planner_tokens)
-    model = "gpt-5.6-luna"
+    model = "openai/gpt-5.6-luna"
     if args.variant == "hybrid":
-        os.environ["JEV_PLANNER_BACKEND"] = "codex"
         os.environ["JEV_PLANNER_MODEL"] = model
     else:
         os.environ.pop("JEV_PLANNER_MODEL", None)
-        os.environ.pop("JEV_PLANNER_BACKEND", None)
     os.environ["JEV_BASELINE_MODEL"] = model
 
     # Upstream provides the native emulator setup; gameplay uses its real
@@ -99,7 +97,6 @@ def main() -> int:
     from modules.roms import load_rom_data
     from modules.tasks import get_global_script_context, get_tasks
     from jev_plays_emerald.mode import JevEmeraldMode
-    from jev_plays_emerald.planner_memory import EvidenceLedger
     from jev_plays_emerald.planner import PlannerMemory
     from jev_plays_emerald.telemetry import DecisionTelemetry
 
@@ -112,7 +109,6 @@ def main() -> int:
     telemetry = DecisionTelemetry(args.output / "decisions.jsonl", model=decision_model)
     metadata = dict(variant=args.variant, target=args.target, decision_model=decision_model,
                     planner_model=model if args.variant == "hybrid" else None,
-                    planner_backend="codex" if args.variant == "hybrid" else None,
                     authored_hints=False, memory="fresh", seconds_budget=args.seconds,
                     decision_budget=args.max_decisions, planner_call_budget=args.max_planner_calls,
                     planner_token_budget=args.max_planner_tokens, checkpoint=False, suppress_futile=False)
@@ -122,13 +118,13 @@ def main() -> int:
                          suppress_futile=False)
     if args.variant in {"hybrid", "jev-grounded"}:
         class UncoachedMemory(PlannerMemory):
-            """Control arm: same grounded brief and evidence, zero coach calls."""
+            """Control arm: same grounded brief, zero coach calls."""
 
             def reason(self, observation):
                 return None
 
         memory_type = UncoachedMemory if args.variant == "jev-grounded" else PlannerMemory
-        mode._planner = memory_type(ledger=EvidenceLedger(args.output / "planner-memory.json"))
+        mode._planner = memory_type()
     runner = mode.run()
     context.controller_stack.clear()
     context.controller_stack.append(runner)

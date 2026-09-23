@@ -77,14 +77,13 @@ def test_first_gym_retains_actions_after_rival(monkeypatch):
     assert not legal_actions(obs)
 
 
-def test_post_rival_milestones_do_not_call_luna_without_a_stall(monkeypatch, tmp_path):
+def test_post_rival_milestones_do_not_call_luna_without_a_stall(monkeypatch):
     from jev_plays_emerald.planner import PlannerMemory
-    from jev_plays_emerald.planner_memory import EvidenceLedger
     from jev_plays_emerald.planner_knowledge import stage_key
 
     monkeypatch.setenv("JEV_TARGET", "first-gym")
     obs = observation(opening_flags=OpeningFlags(True, False, True))
-    memory = PlannerMemory(ledger=EvidenceLedger(tmp_path / "memory.json"))
+    memory = PlannerMemory()
     memory.sync_progress(obs)
     assert stage_key(obs) == "receive_pokedex"
     assert memory.reason(obs) is None
@@ -95,14 +94,13 @@ def test_post_rival_milestones_do_not_call_luna_without_a_stall(monkeypatch, tmp
     assert memory.reason(replace(obs, game_state="BATTLE")) is None
 
 
-def test_entering_the_gym_does_not_call_luna_without_a_stall(tmp_path, monkeypatch):
+def test_entering_the_gym_does_not_call_luna_without_a_stall(monkeypatch):
     from jev_plays_emerald.planner import PlannerMemory
-    from jev_plays_emerald.planner_memory import EvidenceLedger
     from jev_plays_emerald.planner_knowledge import stage_key
 
     monkeypatch.setenv("JEV_TARGET", "first-gym")
     obs = observation(opening_flags=OpeningFlags(True, True, True, stone_badge=False, petalburg_tutorial=True, devon_goods_saved=True))
-    memory = PlannerMemory(ledger=EvidenceLedger(tmp_path / "memory.json"))
+    memory = PlannerMemory()
     assert stage_key(obs) == "first_gym"
     assert memory.reason(obs) is None
 
@@ -120,26 +118,6 @@ def test_distinct_woods_exits_to_same_route_are_both_offered(monkeypatch):
     assert {a.id for a in actions} >= {"walk:24:11:1:1", "walk:24:11:10:49"}
 
 
-def test_observed_route_survives_restart_without_replaying_prior_instructions(tmp_path, monkeypatch):
-    from jev_plays_emerald.actions import Action, Outcome
-    from jev_plays_emerald.jev import TokenUsage
-    from jev_plays_emerald.planner import PlannerAdvice, PlannerMemory
-    from jev_plays_emerald.planner_memory import EvidenceLedger
-
-    monkeypatch.setenv("JEV_TARGET", "first-gym")
-    path = tmp_path / "memory.json"
-    before = observation(opening_flags=OpeningFlags(True, False, True))
-    after = replace(before, position=MapPosition((0, 3), (1, 2), "Up"))
-    action = Action("walk:11:3:4:15", "Leave gym", before.context_id)
-    advice = PlannerAdvice("Return to Birch", action.id, "Gym exit", "Do not challenge trainers", "Pokedex received", "test", TokenUsage(), 0)
-    memory = PlannerMemory(ledger=EvidenceLedger(path))
-    memory.accept(before, advice)
-    memory.record(before, after, action, Outcome.INTERRUPTED, "map changed")
-    restored = PlannerMemory(ledger=EvidenceLedger(path)).decision_brief(after, (), None)
-    assert "remembered_plan" not in restored
-    assert "observed_routes" not in restored
-
-
 def test_exhausted_trainer_battle_can_select_struggle():
     from jev_plays_emerald.opening import legal_actions
     from jev_plays_emerald.state import ActiveBattler, MoveState
@@ -151,24 +129,21 @@ def test_exhausted_trainer_battle_can_select_struggle():
     assert "Struggle" in actions[0].label
 
 
-def test_decision_brief_has_no_persistent_follow_up_guidance(tmp_path):
+def test_decision_brief_has_no_persistent_follow_up_guidance():
     from jev_plays_emerald.planner import PlannerMemory
-    from jev_plays_emerald.planner_memory import EvidenceLedger
 
-    memory = PlannerMemory(ledger=EvidenceLedger(tmp_path / "memory.json"))
+    memory = PlannerMemory()
     obs = observation()
     brief = memory.decision_brief(obs, (), None)
     assert "planner_follow_up" not in brief
     assert "remembered_plan" not in brief
 
 
-def test_transient_regression_cannot_verify_advice(tmp_path):
+def test_transient_regression_is_not_story_progress():
     from jev_plays_emerald.jev import TokenUsage
     from jev_plays_emerald.planner import PlannerAdvice, PlannerMemory
-    from jev_plays_emerald.planner_memory import EvidenceLedger
 
-    ledger = EvidenceLedger(tmp_path / "memory.json")
-    memory = PlannerMemory(ledger=ledger)
+    memory = PlannerMemory()
     obs = observation()
     advice = PlannerAdvice("Go west", "walk:0:17:49:10", "Route 102", "Avoid loops", "Meet Norman", "test", TokenUsage(), 0)
     memory.accept(obs, advice)
@@ -176,4 +151,3 @@ def test_transient_regression_cannot_verify_advice(tmp_path):
     invalid = replace(obs, game_state="UNKNOWN", opening_flags=OpeningFlags(False, False, False))
     assert memory.sync_progress(invalid) is False
     assert memory.sync_progress(obs) is False
-    assert ledger.summary("completed", obs.position.map_id)["verified"] == []

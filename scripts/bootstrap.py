@@ -14,11 +14,13 @@ import zipfile
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# The launcher's pins are stdlib-only, so they import before dependencies exist.
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+from jev_plays_emerald.__main__ import POKEBOT_PATCH, POKEBOT_REVISION, POKEBOT_ROOT  # noqa: E402
+
 CACHE_DIR = PROJECT_ROOT / ".cache"
-POKEBOT_DIR = CACHE_DIR / "pokebot-gen3"
+POKEBOT_DIR = POKEBOT_ROOT
 POKEBOT_URL = "https://github.com/40Cakes/pokebot-gen3.git"
-POKEBOT_REVISION = "5dd898f830775d448b06db6f5cd65b930540f146"
-POKEBOT_PATCH = PROJECT_ROOT / "patches" / "pokebot-custom-trainer-action.patch"
 PREVIOUS_PATCH_SHA256 = "38a123d0e3e9b0481fb032de1f88955907cf0be976a4d7fa67c3c757894bf272"
 LIBMGBA_TAG = "0.2.0-2"
 LIBMGBA_ARCHIVE = "libmgba-py_0.2.0_macos-arm64.zip"

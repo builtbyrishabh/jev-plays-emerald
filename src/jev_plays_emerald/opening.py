@@ -378,7 +378,7 @@ FUTILE_ATTEMPTS = 3
 REPEAT_LIMIT = 4
 
 
-def recently_futile(observation: Observation, threshold: int = FUTILE_ATTEMPTS) -> set[str]:
+def recently_futile(observation: Observation) -> set[str]:
     """Action IDs that keep being interrupted here and never complete.
 
     Without this an action whose label promises something the game refuses is
@@ -401,7 +401,7 @@ def recently_futile(observation: Observation, threshold: int = FUTILE_ATTEMPTS) 
             impossible.add(record.action_id)
         else:
             interruptions[record.action_id] = interruptions.get(record.action_id, 0) + 1
-    futile = {action for action, count in interruptions.items() if count >= threshold}
+    futile = {action for action, count in interruptions.items() if count >= FUTILE_ATTEMPTS}
     # Oscillation is built from successes: walking up and down a staircase
     # works every time and gets nowhere. Counting completions rather than
     # attempts keeps actions that merely get interrupted a lot - the first

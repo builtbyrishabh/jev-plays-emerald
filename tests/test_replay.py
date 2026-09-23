@@ -157,7 +157,7 @@ def test_mission_variant_drops_every_hint():
     assert variant("mission")[1](hinted) == MISSION
 
 
-def test_current_minimal_variant_replays_the_prompt_used_with_luna(monkeypatch):
+def test_current_variant_rebuilds_the_prompt_from_recorded_state(monkeypatch):
     monkeypatch.setenv("JEV_TARGET", "first-gym")
     recorded = situation(
         state={
@@ -178,7 +178,7 @@ def test_current_minimal_variant_replays_the_prompt_used_with_luna(monkeypatch):
         }
     )
 
-    rewritten = variant("current-minimal")[1](recorded)
+    rewritten = variant("current")[1](recorded)
 
     assert rewritten.startswith("Goal: earn the Stone Badge.")
     assert "latest relevant dialogue" in rewritten

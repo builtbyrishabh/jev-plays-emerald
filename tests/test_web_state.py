@@ -10,6 +10,7 @@ from types import MappingProxyType, SimpleNamespace
 import pytest
 from aiohttp import test_utils, web
 
+from jev_plays_emerald.__main__ import POKEBOT_ROOT
 from jev_plays_emerald.actions import Action
 from jev_plays_emerald.jev import TokenUsage
 from jev_plays_emerald.state import (
@@ -21,7 +22,6 @@ from jev_plays_emerald.state import (
 from jev_plays_emerald.telemetry import AgentStatus, CostEstimate, DecisionRecord
 
 PROJECT_ROOT = Path(__file__).parents[1]
-POKEBOT_ROOT = PROJECT_ROOT / ".cache" / "pokebot-gen3"
 
 
 @pytest.fixture

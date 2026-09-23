@@ -23,14 +23,11 @@ Open **<http://127.0.0.1:8888/jev/index.html>** for gameplay, decisions, probabi
 
 Existing profiles and saves are preserved. Use `--profile new-run-name` for a separate fresh run. See [setup](docs/setup.md) for dependencies and checkpoint handling, and [viewer details](docs/viewer.md) for controls.
 
-For local Luna coaching, run `pnpm --dir service install` and sign into the
-Codex CLI with ChatGPT (`codex login`). Prefix the launch command with
-`JEV_PLANNER_BACKEND=codex JEV_PLANNER_MODEL=gpt-5.6-luna` and use a fresh `--profile first-gym-run`. The default target is `first-gym`; pass `--target rival` for the original opening. This uses your
-subscription capacity for Luna; Jev still uses AI Gateway. It never silently
-falls back to Luna API billing. See [Codex planner setup](docs/codex-planner.md).
-
-For explicit API-based planning instead, set `JEV_PLANNER_BACKEND=gateway`
-and `JEV_PLANNER_MODEL=openai/gpt-5.6-luna`. Jev's base prompt contains no authored
+For Luna coaching, run `pnpm --dir service install`, prefix the launch command
+with `JEV_PLANNER_MODEL=openai/gpt-5.6-luna`, and use a fresh
+`--profile first-gym-run`. Luna is billed through the same AI Gateway key as Jev.
+The default target is `first-gym`; pass `--target rival` for the original
+opening. Jev's base prompt contains no authored
 route. The planner advises after three repeats of one action or eight meaningful
 overworld decisions without story progress. Each correction contains a currently legal
 action, exact location, action to avoid, and observable success signal. Once Jev
@@ -38,9 +35,8 @@ completes that action, the hint expires and Jev decides independently until anot
 stall. Jev still chooses every action. Advice and call count appear in
 the viewer.
 
-Planner hypotheses and observed outcomes persist for inspection in
-`runs/planner-memory.json`; saved routes and dead ends are not replayed into model prompts. This local run does not need a database; replace the
-ledger only if multiple games or concurrent writers need shared memory. See
+Planner memory lives only in the running process; nothing is persisted or
+replayed into later prompts, so no database is needed. See
 [planner behavior and limits](docs/planner-proposal.md).
 
 Jev confirms the requested player name **Jev** through its decision API. The
@@ -69,7 +65,7 @@ See [measured results](docs/results.md) for repeatability, failures, costs, and 
 - [TypeScript decision service](docs/decision-service.md)
 - [Replaying recorded decisions](docs/replay.md)
 
-The app uses pinned mGBA/PokéBot Gen3, Python, and one local server with plain HTML/CSS/JavaScript. Optional Luna coaching uses the existing TypeScript child, with either bounded headless Codex calls or explicit AI Gateway calls. There is no database or persistent coding session in the gameplay loop.
+The app uses pinned mGBA/PokéBot Gen3, Python, and one local server with plain HTML/CSS/JavaScript. Optional Luna coaching uses the existing TypeScript child, through AI Gateway. There is no database or persistent coding session in the gameplay loop.
 
 Fresh, bounded comparison runs and response-level token reports are available
 through [the benchmark workflow](docs/benchmark.md). The

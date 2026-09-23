@@ -8,12 +8,9 @@ requirements still apply.
 
 Current implementation (22 September): Jev chooses gameplay actions, Python
 owns observations and normal-input execution, and optional stuck-only Luna
-coaching runs through the local TypeScript service. For local use, bounded
-Codex CLI calls with ChatGPT authentication replace Luna API billing; the
-gateway backend remains explicit. See [setup](codex-planner.md) and
-[measurement workflow](benchmark.md). The original design below predates this
-opt-in coaching path; its "no runtime Codex" constraint is superseded for
-read-only, tool-disabled game advice, never runtime code repair.
+coaching runs through the local TypeScript service and AI Gateway. See
+[planner behavior](planner-proposal.md) and [measurement workflow](benchmark.md).
+The original design below predates this opt-in coaching path.
 
 ## Goal
 

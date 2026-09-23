@@ -1,4 +1,3 @@
-import { runCodexJson } from './codex.ts'
 import { gateway } from '@ai-sdk/gateway'
 import { generateText } from 'ai'
 import { JevError, type ChoiceRequest } from './jev.ts'
@@ -72,28 +71,11 @@ export function validatePlannerAdvice(
 export async function plan({ state, options, instructions, timeoutMs }: ChoiceRequest) {
   const model = process.env.JEV_PLANNER_MODEL?.trim()
   if (!model) throw new JevError('JEV_PLANNER_MODEL is required for planning', 'invalid')
-  const backend = process.env.JEV_PLANNER_BACKEND?.trim() || 'gateway'
-  if (backend !== 'gateway' && backend !== 'codex') throw new JevError('JEV_PLANNER_BACKEND must be gateway or codex', 'invalid')
   if (Object.keys(options).length === 0) throw new JevError('Planner requires legal actions', 'invalid')
-  const deadline = timeoutMs ?? (backend === 'codex' ? 120_000 : 30_000)
+  const deadline = timeoutMs ?? 30_000
   if (!Number.isFinite(deadline) || deadline <= 0) throw new JevError('Planner timeout must be positive', 'invalid')
   const started = performance.now()
   const prompt = JSON.stringify({ mission: instructions, liveState: state, legalActions: options })
-  if (backend === 'codex') {
-    const fields = ['hint', 'destinationActionId', 'location', 'avoid', 'successSignal']
-    const result = await runCodexJson({
-      prompt: `${PLANNER_INSTRUCTIONS}\nDo not use tools. Answer only from the supplied game evidence.\n${prompt}`,
-      model, timeoutMs: deadline,
-      schema: {
-        type: 'object', additionalProperties: false, required: fields,
-        properties: Object.fromEntries(fields.map((field) => [field,
-          field === 'destinationActionId' ? { type: 'string', enum: Object.keys(options) } : { type: 'string' },
-        ])),
-      },
-    })
-    const advice = validatePlannerAdvice(result.text, false, options)
-    return { ...advice, model, latencyMs: performance.now() - started, usage: result.usage }
-  }
   const result = await generateText({
     model: gateway(model),
     instructions: PLANNER_INSTRUCTIONS,

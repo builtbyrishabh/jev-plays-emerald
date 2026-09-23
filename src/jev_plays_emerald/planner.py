@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from collections import deque
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 import os
 from typing import Any
 
 from jev_plays_emerald.actions import Action, Outcome
 from jev_plays_emerald.jev import TokenUsage
 from jev_plays_emerald.planner_knowledge import stage_key
-from jev_plays_emerald.planner_memory import EvidenceLedger
 from jev_plays_emerald.state import Observation
 
 
@@ -90,17 +88,14 @@ class _Attempt:
 
 @dataclass
 class _ActiveHypothesis:
-    stage: str
     action_id: str
     followed: bool = False
 
 
 class PlannerMemory:
-    """Accumulate failed choices and retain only evidence-backed lessons."""
+    """Track failed choices in memory to decide when Jev needs coaching."""
 
-    def __init__(self, *, ledger: EvidenceLedger | None = None) -> None:
-        self.ledger = ledger or EvidenceLedger()
-        self.history: deque[dict[str, Any]] = deque(maxlen=24)
+    def __init__(self) -> None:
         self._attempts: dict[tuple[str, tuple[int, int], str], _Attempt] = {}
         self._actions_without_progress = 0
         self._planned_progress: tuple | None = None
@@ -126,7 +121,7 @@ class PlannerMemory:
         return None
 
     def sync_progress(self, observation: Observation) -> bool:
-        """Clear attempts and verify a followed hint when trusted progress changes."""
+        """Clear attempts and the active hint when trusted progress changes."""
 
         if observation.game_state not in {"OVERWORLD", "BATTLE", "CHOOSE_STARTER"}:
             return False
@@ -137,14 +132,6 @@ class PlannerMemory:
         if self._planned_progress == progress:
             return False
 
-        previous = self._planned_progress
-        active = self._active_hypothesis
-        if active is not None and active.followed:
-            self.ledger.verify_hypothesis(
-                active.stage,
-                active.action_id,
-                f"story_progress:{previous!r}->{progress!r}",
-            )
         self._active_hypothesis = None
         self._planned_progress = progress
         self._attempts.clear()
@@ -157,15 +144,7 @@ class PlannerMemory:
         """Activate validated advice without promoting or condemning the old hint."""
 
         if advice is not None:
-            stage = stage_key(observation)
-            map_id = observation.position.map_id if observation.position else None
-            self.ledger.record_hypothesis(
-                stage, map_id, advice.hint, advice.destination_action_id
-            )
-            self.ledger.remember_plan(stage, advice.guidance)
-            self._active_hypothesis = _ActiveHypothesis(
-                stage, advice.destination_action_id
-            )
+            self._active_hypothesis = _ActiveHypothesis(advice.destination_action_id)
         self._planned_progress = story_progress(observation)
         self._attempts.clear()
         self._actions_without_progress = 0
@@ -200,26 +179,7 @@ class PlannerMemory:
             ("dialogue:", "setup:")
         ):
             return
-        changed = story_progress(before) != story_progress(after)
-        map_changed = (
-            before.position is not None
-            and after.position is not None
-            and before.position.map_id != after.position.map_id
-        )
-        if map_changed:
-            self.ledger.remember_route(before.position.map_id, after.position.map_id, action.id)
-        self.history.append(
-            {
-                "from": asdict(before.position) if before.position else None,
-                "to": asdict(after.position) if after.position else None,
-                "action": action.id,
-                "label": action.label,
-                "outcome": outcome.value,
-                "reason": reason,
-                "story_changed": changed,
-            }
-        )
-        if changed:
+        if story_progress(before) != story_progress(after):
             self._attempts.clear()
             self._actions_without_progress = 0
             return
@@ -234,15 +194,6 @@ class PlannerMemory:
             self._actions_without_progress = 0
         else:
             self._actions_without_progress += 1
-        if attempt.count == 3 and outcome is not Outcome.SUCCESS:
-            self.ledger.record_dead_end(
-                stage,
-                before.position.map_id,
-                action.id,
-                action.label,
-                attempt.last_result,
-                attempt.count,
-            )
 
     def decision_brief(
         self,

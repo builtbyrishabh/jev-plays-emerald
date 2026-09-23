@@ -6,10 +6,9 @@ import pytest
 from ruamel.yaml import YAML
 
 from jev_plays_emerald import __main__ as launcher
-from jev_plays_emerald.__main__ import verify_rom
+from jev_plays_emerald.__main__ import POKEBOT_ROOT, verify_rom
 
 PROJECT_ROOT = Path(__file__).parents[1]
-POKEBOT_ROOT = PROJECT_ROOT / ".cache" / "pokebot-gen3"
 
 
 def test_wrong_rom_is_rejected(tmp_path: Path) -> None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator, Iterable
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
@@ -76,7 +76,6 @@ class ActionExecutor:
         self._max_navigation_replans = max_navigation_replans
         self.current_action: Action | None = None
         self.interrupted_action: Action | None = None
-        self.failure_reason: str | None = None
         self.last_reason: str | None = None
 
     def execute(self, action: Action) -> Generator[Outcome | None, None, None]:
@@ -85,8 +84,7 @@ class ActionExecutor:
         if self.current_action is not None:
             raise RuntimeError("an action is already running")
         if action.context_id != self._boundary.read_context_id():
-            self.failure_reason = "action context changed before execution"
-            self.last_reason = self.failure_reason
+            self.last_reason = "action context changed before execution"
             self._boundary.reset_held_buttons()
             yield Outcome.FAILED
             return
@@ -95,14 +93,12 @@ class ActionExecutor:
         try:
             plan = self._dispatch[action_kind](action)
         except (KeyError, ValueError) as error:
-            self.failure_reason = str(error) or f"unsupported action: {action.id}"
-            self.last_reason = self.failure_reason
+            self.last_reason = str(error) or f"unsupported action: {action.id}"
             self._boundary.reset_held_buttons()
             yield Outcome.FAILED
             return
 
         self.current_action = action
-        self.failure_reason = None
         self.last_reason = None
         frames = 0
         replans = 0
@@ -164,19 +160,11 @@ class ActionExecutor:
         self._boundary.reset_held_buttons()
         self.current_action = None
         self.last_reason = reason
-        self.failure_reason = reason if outcome is Outcome.FAILED else None
         if outcome is Outcome.INTERRUPTED:
             self.interrupted_action = action
         elif outcome is Outcome.SUCCESS:
             self.interrupted_action = None
         return outcome
-
-    def revalidate_interrupted(self, legal_actions: Iterable[Action]) -> Action | None:
-        """Return the new-context form of an interrupted goal only if it is still legal."""
-
-        if self.interrupted_action is None:
-            return None
-        return next((action for action in legal_actions if action.id == self.interrupted_action.id), None)
 
 
 def _walk_plan(action: Action) -> ExecutionPlan:

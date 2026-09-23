@@ -144,13 +144,11 @@ class DecisionService:
         )
 
     async def plan(self, *, state: JsonValue, options: dict, instructions: str) -> PlannerAdvice:
-        # A cold CLI start takes longer than a direct gateway request. Leave the
-        # child time to terminate and report its deadline before the pipe times out.
-        timeout = 120.0 if os.environ.get("JEV_PLANNER_BACKEND") == "codex" else self._timeout_seconds
+        # Leave the child time to report its own deadline before the pipe times out.
         response = self._exchange({
             "type": "plan", "state": state, "options": options,
-            "instructions": instructions, "timeoutMs": int(timeout * 1000),
-        }, timeout + 5)
+            "instructions": instructions, "timeoutMs": int(self._timeout_seconds * 1000),
+        }, self._timeout_seconds + 5)
         if response.get("type") == "error":
             raise _service_error(response)
         required = ("hint", "destinationActionId", "location", "avoid", "successSignal")

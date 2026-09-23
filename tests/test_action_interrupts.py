@@ -151,7 +151,7 @@ def test_navigation_replans_twice_then_fails() -> None:
     assert next(run) is Outcome.FAILED
     assert attempts == 3
     assert boundary.held_buttons == set()
-    assert executor.failure_reason == "navigation remained blocked after 2 replans"
+    assert executor.last_reason == "navigation remained blocked after 2 replans"
 
 
 def test_timeout_fails_and_releases_input() -> None:
@@ -173,7 +173,7 @@ def test_timeout_fails_and_releases_input() -> None:
     assert next(run) is None
     assert next(run) is Outcome.FAILED
     assert boundary.held_buttons == set()
-    assert executor.failure_reason == "action exceeded 2 frames"
+    assert executor.last_reason == "action exceeded 2 frames"
 
 
 def test_stale_context_is_rejected_before_input() -> None:
@@ -194,20 +194,7 @@ def test_stale_context_is_rejected_before_input() -> None:
 
     assert next(run) is Outcome.FAILED
     assert started is False
-    assert executor.failure_reason == "action context changed before execution"
-
-
-def test_interrupted_goal_must_be_legal_in_the_new_context(navigation_fixture) -> None:
-    run = navigation_fixture.begin_walk()
-    assert next(run) is None
-    navigation_fixture.enter_battle()
-    assert next(run) is Outcome.INTERRUPTED
-
-    new_action = Action("walk:0:16:8:7", "Walk north", "overworld:route101:after-battle")
-    unrelated = Action("talk:3", "Talk to trainer", new_action.context_id)
-
-    assert navigation_fixture.executor.revalidate_interrupted([unrelated]) is None
-    assert navigation_fixture.executor.revalidate_interrupted([unrelated, new_action]) == new_action
+    assert executor.last_reason == "action context changed before execution"
 
 
 def test_observation_context_ignores_movement_frames_but_changes_at_a_menu() -> None:
@@ -491,7 +478,6 @@ def test_mode_tracks_an_action_until_its_terminal_outcome() -> None:
     class FakeExecutor:
         current_action = None
         interrupted_action = None
-        failure_reason = None
         last_reason = None
 
         def execute(self, action):
@@ -499,9 +485,6 @@ def test_mode_tracks_an_action_until_its_terminal_outcome() -> None:
             yield None
             self.current_action = None
             yield Outcome.SUCCESS
-
-        def revalidate_interrupted(self, actions):
-            return None
 
     try:
         mode = JevEmeraldMode(observation_reader=FakeReader(), executor=FakeExecutor())

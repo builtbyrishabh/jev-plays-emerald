@@ -12,10 +12,10 @@ retains the original benchmark objective.
 
 ## Run
 
-With the existing bootstrap, ROM, gateway key and ChatGPT-authenticated Codex:
+With the existing bootstrap, ROM and gateway key:
 
 ```sh
-JEV_PLANNER_BACKEND=codex JEV_PLANNER_MODEL=gpt-5.6-luna \
+JEV_PLANNER_MODEL=openai/gpt-5.6-luna \
   uv run --env-file .env python -m jev_plays_emerald \
   --rom "roms/Pokemon - Emerald Version (USA, Europe).gba" \
   --profile first-gym-run --target first-gym
@@ -40,9 +40,6 @@ stops further coaching rather than counting it as free. Jev continues choosing.
 - Both models receive bounded Gen III species types, effectiveness, upcoming
   moves and level evolutions from pinned PokéBot data. This is reference
   knowledge, not access to hidden opponent moves or future random outcomes.
-- The existing JSON evidence ledger retains lessons, observed map transitions
-  and the latest stage's plan. Remembered actions must be revalidated against
-  the current menu; ordinary map travel does not erase the subgoal.
 
 The viewer leads with the mission, milestones, party HP, badge progress and
 current action. Token counts and action preferences are expandable. Submitted

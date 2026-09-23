@@ -17,13 +17,13 @@ DYLD_LIBRARY_PATH=/opt/homebrew/lib uv run --env-file .env python scripts/benchm
 ```
 
 Repeat with `--variant jev-only` and `--variant luna-only`, each in its own new
-folder. Jev-only runs without Luna. Hybrid uses Jev plus stuck-only Codex Luna.
+folder. Jev-only runs without Luna. Hybrid uses Jev plus stuck-only Luna.
 Luna-only replaces the player for comparison using the same legal menu plus its
 legacy opening reference facts, and does not invent probability
 distributions. The normal application always keeps Jev as the player.
 
-All arms use the same high-level mission without an authored route. Hybrid starts with an empty
-evidence ledger. All arms disable failed-action suppression, so repeated failures
+All arms use the same high-level mission without an authored route and start with
+empty planner memory. All arms disable failed-action suppression, so repeated failures
 do not silently remove choices in only one configuration. The hybrid's grounded
 brief includes live legal actions and attempt counts; Jev-only is explicitly an
 uncoached ablation, not an identical-prompt model comparison. Luna-only gets the
@@ -31,7 +31,7 @@ opening reference facts. Fresh runs
 share the mission and mechanics but not exact RNG or network timing.
 
 Use `--variant jev-grounded` for the stronger control: it gives Jev the same
-grounded brief, attempt counts and fresh evidence ledger as the
+grounded brief and attempt counts as the
 hybrid, but never calls Luna. This helps separate context improvements from
 coaching. Luna-only's actual input with added reference facts is also retained in
 `baseline-requests.jsonl` by current harness versions.
@@ -45,9 +45,9 @@ uv run python -m jev_plays_emerald.report \
 Count `response` and `planner-response` events, including stale responses.
 `decision` events duplicate selected usage and must not be added again. Unknown
 usage and unresolved requests are reported separately. Cached input is already
-included in input, not additional tokens. Codex usage includes CLI prompt overhead.
-Luna usage is not priced using Jev's rate. Subscription use is not free compute,
-and CLI token totals are not measurements of bare Luna API calls.
+included in input, not additional tokens. Luna usage is not priced using Jev's
+rate. Suites recorded before September 23 ran Luna through the Codex CLI, whose
+token totals include CLI prompt overhead and are not comparable to API runs.
 
 Compare rival completion, losses/recovery, elapsed time, model calls, known input
 and output tokens, and unknown usage. Record failed and budget-limited runs too.
@@ -62,7 +62,7 @@ DYLD_LIBRARY_PATH=/opt/homebrew/lib uv run --env-file .env python scripts/benchm
 
 The defaults schedule five hybrid runs and three runs of each control, all fresh,
 with 900 seconds, 150 decisions, and coaching limits of eight calls/50,000 known
-tokens per run. Each attempt has a separate ledger, console log and result folder.
+tokens per run. Each attempt has a separate console log and result folder.
 `--hybrid-runs`, `--control-runs`, `--seconds`, `--max-decisions`,
 `--max-planner-calls` and `--max-planner-tokens` override these fixed suite settings.
 
