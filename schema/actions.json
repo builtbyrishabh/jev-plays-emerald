@@ -1,0 +1,121 @@
+{
+  "version": 1,
+  "comment": "Source of truth for the action vocabulary shared by the TypeScript decision service and the Python executors. Every kind here must have an entry in ACTION_EXECUTORS (tests/test_action_contract.py) so an ID the service can offer is always one Python can run.",
+  "kinds": {
+    "walk": {
+      "id": "walk:<map group>:<map number>:<x>:<y>",
+      "enumerated": true,
+      "summary": "Navigate to a tile on a named map, used for doorways and map edges."
+    },
+    "talk": {
+      "id": "talk:<object local id>",
+      "enumerated": true,
+      "summary": "Approach a loaded map object and interact with it."
+    },
+    "interact": {
+      "id": "interact:<x>:<y>",
+      "enumerated": true,
+      "summary": "Face and examine a background event tile: a sign, an object, or a hidden item."
+    },
+    "starter": {
+      "id": "starter:<treecko|torchic|mudkip>",
+      "enumerated": true,
+      "summary": "Take one of the three Pokemon from Birch's bag."
+    },
+    "battle-move": {
+      "id": "battle-move:<move index>",
+      "enumerated": true,
+      "summary": "Use one of the active battler's moves."
+    },
+    "battle-switch": {
+      "id": "battle-switch:<party index>",
+      "enumerated": true,
+      "summary": "Send out a different, unfainted party member."
+    },
+    "battle-item": {
+      "id": "battle-item:<item name>",
+      "enumerated": true,
+      "summary": "Use a healing, PP or stat item from the bag during a battle."
+    },
+    "catch": {
+      "id": "catch:<ball name>",
+      "enumerated": true,
+      "summary": "Throw a Poke Ball at a wild opponent."
+    },
+    "battle-run": {
+      "id": "battle-run",
+      "enumerated": true,
+      "summary": "Attempt to escape a wild encounter."
+    },
+    "heal": {
+      "id": "heal:<site>",
+      "enumerated": true,
+      "summary": "Walk to a reachable Pokemon Center, restore the party, and return outside."
+    },
+    "answer": {
+      "id": "answer:<yes|no>",
+      "enumerated": true,
+      "summary": "Answer a meaningful dialogue question."
+    },
+    "shop-buy": {
+      "id": "shop-buy:<item name>:<quantity>",
+      "enumerated": true,
+      "summary": "Buy an affordable offered item using normal shop inputs."
+    },
+    "shop-exit": {
+      "id": "shop-exit",
+      "enumerated": true,
+      "summary": "Leave the shop menu."
+    },
+    "forced-switch": {
+      "id": "forced-switch:<party index>",
+      "enumerated": true,
+      "summary": "Choose an available replacement after a Pokemon faints."
+    },
+    "learn-move": {
+      "id": "learn-move:<move index|skip>",
+      "enumerated": true,
+      "summary": "Replace a move or decline a newly learned move."
+    },
+    "evolve": {
+      "id": "evolve:<yes|no>",
+      "enumerated": true,
+      "summary": "Allow or cancel the current evolution."
+    },
+    "field-item": {
+      "id": "field-item:<item name>:<party index>",
+      "enumerated": true,
+      "summary": "Heal an injured party member outside battle."
+    },
+    "train": {
+      "id": "train:<map group>:<map number>:<x1>:<y1>:<x2>:<y2>",
+      "enumerated": true,
+      "summary": "Seek a wild encounter in reachable grass for training or catching."
+    },
+    "tutorial": {
+      "id": "tutorial:advance",
+      "enumerated": false,
+      "summary": "Advance Wally's forced catching demonstration without choosing for him."
+    },
+    "caught-dex": {
+      "id": "caught-dex:continue",
+      "enumerated": false,
+      "summary": "Close the forced Pokédex registration page after a catch."
+    },
+    "nickname": {
+      "id": "nickname:keep",
+      "enumerated": false,
+      "summary": "Confirm the configured default species name if its naming screen is already open."
+    },
+    "setup": {
+      "id": "setup:<new-game|name|clock>",
+      "enumerated": false,
+      "summary": "Configured character creation, before the player has any control. Python only."
+    },
+    "dialogue": {
+      "id": "dialogue:advance",
+      "enumerated": false,
+      "summary": "Advance mandatory cutscene text. Deterministic, never a model decision."
+    }
+  }
+}

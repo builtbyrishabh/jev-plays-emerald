@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator, Iterable
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
@@ -26,6 +26,10 @@ class FrameState:
     game_state: str
     menu_phase: str = "none"
     paused: bool = False
+    # The scripts Emerald is running right now, innermost last. Carried so an
+    # interruption can say which one took over: "the game started a cutscene"
+    # and "the game refused to let you leave town" look identical without it.
+    scripts: tuple[str, ...] = ()
 
 
 class FrameBoundary(Protocol):
@@ -72,7 +76,6 @@ class ActionExecutor:
         self._max_navigation_replans = max_navigation_replans
         self.current_action: Action | None = None
         self.interrupted_action: Action | None = None
-        self.failure_reason: str | None = None
         self.last_reason: str | None = None
 
     def execute(self, action: Action) -> Generator[Outcome | None, None, None]:
@@ -81,8 +84,7 @@ class ActionExecutor:
         if self.current_action is not None:
             raise RuntimeError("an action is already running")
         if action.context_id != self._boundary.read_context_id():
-            self.failure_reason = "action context changed before execution"
-            self.last_reason = self.failure_reason
+            self.last_reason = "action context changed before execution"
             self._boundary.reset_held_buttons()
             yield Outcome.FAILED
             return
@@ -91,14 +93,12 @@ class ActionExecutor:
         try:
             plan = self._dispatch[action_kind](action)
         except (KeyError, ValueError) as error:
-            self.failure_reason = str(error) or f"unsupported action: {action.id}"
-            self.last_reason = self.failure_reason
+            self.last_reason = str(error) or f"unsupported action: {action.id}"
             self._boundary.reset_held_buttons()
             yield Outcome.FAILED
             return
 
         self.current_action = action
-        self.failure_reason = None
         self.last_reason = None
         frames = 0
         replans = 0
@@ -114,7 +114,10 @@ class ActionExecutor:
                     yield self._finish(Outcome.INTERRUPTED, f"game changed to {frame_state.game_state}")
                     return
                 if frame_state.menu_phase not in plan.allowed_menu_phases:
-                    yield self._finish(Outcome.INTERRUPTED, f"unexpected menu: {frame_state.menu_phase}")
+                    script = f" ({frame_state.scripts[-1]})" if frame_state.scripts else ""
+                    yield self._finish(
+                        Outcome.INTERRUPTED, f"unexpected menu: {frame_state.menu_phase}{script}"
+                    )
                     return
                 if frames >= self._frame_limit:
                     yield self._finish(Outcome.FAILED, f"action exceeded {self._frame_limit} frames")
@@ -157,19 +160,11 @@ class ActionExecutor:
         self._boundary.reset_held_buttons()
         self.current_action = None
         self.last_reason = reason
-        self.failure_reason = reason if outcome is Outcome.FAILED else None
         if outcome is Outcome.INTERRUPTED:
             self.interrupted_action = action
         elif outcome is Outcome.SUCCESS:
             self.interrupted_action = None
         return outcome
-
-    def revalidate_interrupted(self, legal_actions: Iterable[Action]) -> Action | None:
-        """Return the new-context form of an interrupted goal only if it is still legal."""
-
-        if self.interrupted_action is None:
-            return None
-        return next((action for action in legal_actions if action.id == self.interrupted_action.id), None)
 
 
 def _walk_plan(action: Action) -> ExecutionPlan:
@@ -181,12 +176,14 @@ def _walk_plan(action: Action) -> ExecutionPlan:
         raise ValueError(f"invalid walk action: {action.id}") from error
 
     def navigate() -> Generator[None, None, None]:
+        from modules.context import context
         from modules.memory import GameState, get_game_state
         from modules.modes.util.walking import TimedOutTryingToReachWaypointError, navigate_to
-        from modules.player import get_player_location, player_avatar_is_controllable
+        from modules.player import get_player_avatar, get_player_location, player_avatar_is_controllable
 
+        starting_location = get_player_location()
         upstream = navigate_to(destination_map, destination)
-        last_location = get_player_location()
+        last_location = starting_location
         stalled_frames = 0
         try:
             while True:
@@ -202,11 +199,22 @@ def _walk_plan(action: Action) -> ExecutionPlan:
                         raise NavigationBlocked("no navigation progress for 45 overworld frames")
                 yield
         except StopIteration:
-            return
+            pass
         except TimedOutTryingToReachWaypointError as error:
             raise NavigationBlocked(str(error)) from error
         finally:
             upstream.close()
+
+        # A warp action can be offered while the avatar is already standing on
+        # its landing tile. Upstream navigation then has no path to traverse, so
+        # step back through the doorway instead of reporting a false success.
+        doorway = (destination_map, destination)
+        if starting_location == doorway and get_player_location() == doorway:
+            opposite = {"Up": "Down", "Down": "Up", "Left": "Right", "Right": "Left"}
+            button = opposite[get_player_avatar().facing_direction]
+            while get_player_location() == doorway:
+                context.emulator.hold_button(button)
+                yield
 
     return ExecutionPlan(
         navigate,
@@ -223,7 +231,22 @@ def _talk_plan(action: Action) -> ExecutionPlan:
 
     def talk() -> Generator[None, None, None]:
         from modules.modes.util.higher_level_actions import talk_to_npc
+        from modules.map import get_map_data, get_map_data_for_current_position
+        from modules.modes.util.walking import navigate_to, ensure_facing_direction
+        from modules.context import context
 
+        location = get_map_data_for_current_position()
+        npc = next((obj for obj in location.objects if obj.local_id == local_object_id), None)
+        if npc is not None:
+            x, y = npc.local_coordinates
+            for dx, dy, facing in ((0, 1, "Up"), (0, -1, "Down"), (1, 0, "Left"), (-1, 0, "Right")):
+                counter = (x + dx, y + dy)
+                if get_map_data(location.map_group_and_number, counter).tile_type == "Counter":
+                    yield from navigate_to(location.map_group_and_number, (x + 2 * dx, y + 2 * dy))
+                    yield from ensure_facing_direction(facing)
+                    context.emulator.press_button("A")
+                    yield
+                    return
         yield from talk_to_npc(local_object_id)
 
     return ExecutionPlan(talk, frozenset({"OVERWORLD"}), frozenset({"none", "script"}))
@@ -295,6 +318,9 @@ ACTION_EXECUTORS: dict[str, ActionPlanFactory] = {
 }
 
 
+PLAYER_NAME = "Jev"
+
+
 def _setup_plan(action: Action) -> ExecutionPlan:
     def setup():
         from modules.context import context
@@ -307,17 +333,16 @@ def _setup_plan(action: Action) -> ExecutionPlan:
                 context.emulator.press_button("A")
                 yield
         elif kind == "name":
+            from modules.keyboard import type_in_naming_screen
+
             while not task_is_active("Task_HandleInput"):
                 yield
-            # Fixed keyboard positions on the supported English Emerald ROM.
-            # This is setup configuration, never a model-selected game action.
-            for button in ("Down", "Right", "Right", "Right", "A", "Up", "Right", "A",
-                           "Down", "Down", "Down", "Left", "Left", "A", "Start", "A"):
-                context.emulator.press_button(button)
-                for _ in range(17):
-                    yield
-            while get_game_state() is GameState.NAMING_SCREEN:
-                context.emulator.press_button("A")
+            # Jev confirms the requested name; upstream types it using the live
+            # keyboard state, including the lowercase page for e and v.
+            yield from type_in_naming_screen(PLAYER_NAME, max_length=7)
+        elif kind == "close-clock":
+            while task_is_active("Task_ViewClock_HandleInput"):
+                context.emulator.press_button("B")
                 yield
         elif kind == "clock":
             context.emulator.press_button("A")
@@ -339,83 +364,54 @@ def _setup_plan(action: Action) -> ExecutionPlan:
 def _dialogue_plan(action: Action) -> ExecutionPlan:
     def advance():
         from modules.context import context
-        from modules.tasks import get_global_script_context
+        from modules.tasks import get_global_script_context, is_waiting_for_input
 
         from jev_plays_emerald.opening import dialogue_button
 
         while get_global_script_context().is_active:
-            context.emulator.press_button(dialogue_button(tuple(get_global_script_context().stack)))
+            # A freshly created shop/choice can consume an already held input
+            # before its task is visible. Only acknowledge waiting text here.
+            if is_waiting_for_input():
+                context.emulator.press_button(dialogue_button(tuple(get_global_script_context().stack)))
             yield
 
     return ExecutionPlan(advance, frozenset({"OVERWORLD", "CHANGE_MAP"}), frozenset({"none", "script"}))
 
 
-def _goal_plan(action: Action) -> ExecutionPlan:
-    def goal():
-        from modules.context import context
-        from modules.map_data import MapRSE
-        from modules.map import get_map_objects
-        from modules.player import get_player, get_player_location
-        from modules.modes.util import ensure_facing_direction
-        from modules.modes.util.higher_level_actions import talk_to_npc
-
-        here, _ = get_player_location()
-        male = get_player().gender == "male"
-        kind = action.id.partition(":")[2]
-        targets = {
-            "leave-truck": (MapRSE.INSIDE_OF_TRUCK, (4, 2)),
-            "upstairs": (here, (8, 2) if male else (2, 2)),
-            "rival-upstairs": (here, (2, 2) if male else (8, 2)),
-            "clock": (here, (5, 2)),
-            "rival-house": (MapRSE.LITTLEROOT_TOWN, (14, 8) if male else (5, 8)),
-            "meet-rival": (here, (5, 5)),
-            "leave-lab": (here, (6, 12)),
-            "birch-bag": (MapRSE.ROUTE101, (7, 15)),
-            "oldale": (MapRSE.OLDALE_TOWN, (10, 10)),
-            "rival": (MapRSE.ROUTE103, (10, 4)),
-        }
-        if kind == "downstairs":
-            destination = (here, (7, 1) if here == MapRSE.LITTLEROOT_TOWN_BRENDANS_HOUSE_2F else (1, 1))
-        elif kind == "leave-house":
-            destination = (here, (8, 8) if here == MapRSE.LITTLEROOT_TOWN_BRENDANS_HOUSE_1F else (2, 8))
-        else:
-            destination = targets[kind]
-        map_id, coordinates = destination
-        group, number = map_id.value if isinstance(map_id, MapRSE) else map_id
-        walk = Action(f"walk:{group}:{number}:{coordinates[0]}:{coordinates[1]}", action.label, action.context_id)
-        yield from _walk_plan(walk).start()
-        if kind in {"clock", "meet-rival", "birch-bag", "rival"}:
-            if kind == "rival":
-                # Resolve the live object at the source-backed rival landmark.
-                npc = next((obj for obj in get_map_objects() if obj.current_coords == (10, 3)), None)
-                if npc is None:
-                    raise RuntimeError("Route 103 rival object is not at the expected landmark")
-                yield from talk_to_npc(npc.local_id)
-            else:
-                yield from ensure_facing_direction("Up")
-                context.emulator.press_button("A")
-                yield
-
-    return ExecutionPlan(goal, frozenset({"OVERWORLD", "CHANGE_MAP"}), retry_on=(NavigationBlocked,))
-
-
 def _heal_plan(action: Action) -> ExecutionPlan:
-    if action.id != "heal:oldale":
-        raise ValueError("only Oldale healing is in opening scope")
+    center_name = action.id.partition(":")[2]
+    centers = {"oldale": "OldaleTown", "petalburg": "PetalburgCity", "rustboro": "RustboroCity"}
+    if center_name not in centers:
+        raise ValueError(f"unsupported healing center: {center_name}")
 
     def heal():
         from modules.map_data import PokemonCenter
         from modules.modes.util.higher_level_actions import heal_in_pokemon_center
         from modules.pokemon_party import get_party
 
-        yield from heal_in_pokemon_center(PokemonCenter.OldaleTown)
+        from modules.player import get_player_avatar
+        from jev_plays_emerald.gameplay import CENTER_INTERIORS
+
+        if tuple(get_player_avatar().map_group_and_number) == CENTER_INTERIORS[center_name]:
+            from modules.modes.util.walking import navigate_to, ensure_facing_direction
+            from modules.modes.util.tasks_scripts import wait_for_yes_no_question, wait_for_no_script_to_run
+            from modules.context import context
+
+            yield from navigate_to(CENTER_INTERIORS[center_name], (7, 4))
+            yield from ensure_facing_direction("Up")
+            context.emulator.press_button("A")
+            yield
+            yield from wait_for_yes_no_question("Yes")
+            yield from wait_for_no_script_to_run("B")
+        else:
+            yield from heal_in_pokemon_center(getattr(PokemonCenter, centers[center_name]))
         party = get_party()
         if not party or any(p.current_hp != p.total_hp or p.status_condition.name != "Healthy"
                             or any(move.pp != move.total_pp for move in p.moves if move is not None)
                             for p in party):
             raise RuntimeError("Pokémon Center finished without restoring party HP, status and PP")
 
-    return ExecutionPlan(heal, frozenset({"OVERWORLD", "CHANGE_MAP"}), frozenset({"none", "script"}))
+    return ExecutionPlan(heal, frozenset({"OVERWORLD", "CHANGE_MAP"}), frozenset({"none", "script", "yes_no"}))
 
 
 def _battle_run_plan(action: Action) -> ExecutionPlan:
@@ -434,5 +430,357 @@ def _battle_run_plan(action: Action) -> ExecutionPlan:
     return ExecutionPlan(run, frozenset({"BATTLE"}), frozenset({"battle"}))
 
 
-ACTION_EXECUTORS.update({"setup": _setup_plan, "dialogue": _dialogue_plan, "goal": _goal_plan,
-                         "heal": _heal_plan, "battle-run": _battle_run_plan})
+
+def _interact_plan(action: Action) -> ExecutionPlan:
+    """Stand next to a map tile, face it and press A.
+
+    Emerald puts clocks, signs, TVs and the PC on tiles you cannot stand on,
+    so the plan walks to whichever neighbouring tile it can actually reach.
+    """
+
+    try:
+        _, x, y = action.id.split(":")
+        target = (int(x), int(y))
+    except ValueError as error:
+        raise ValueError(f"invalid interact action: {action.id}") from error
+
+    def interact() -> Generator[None, None, None]:
+        from modules.context import context
+        from modules.modes.util import ensure_facing_direction
+        from modules.modes.util.walking import TimedOutTryingToReachWaypointError, navigate_to
+        from modules.player import get_player_location
+
+        here, _ = get_player_location()
+        neighbours = (
+            (target[0], target[1] + 1),
+            (target[0] - 1, target[1]),
+            (target[0] + 1, target[1]),
+            (target[0], target[1] - 1),
+        )
+        for spot in neighbours:
+            try:
+                yield from navigate_to(here, spot)
+                break
+            except (TimedOutTryingToReachWaypointError, NavigationBlocked, RuntimeError, ValueError):
+                continue
+        else:
+            raise NavigationBlocked(f"no reachable tile next to {target}")
+        yield from ensure_facing_direction(target)
+        context.emulator.press_button("A")
+        yield
+
+    return ExecutionPlan(
+        interact,
+        frozenset({"OVERWORLD", "CHANGE_MAP"}),
+        frozenset({"none", "script"}),
+        retry_on=(NavigationBlocked,),
+    )
+
+
+def _battle_switch_plan(action: Action) -> ExecutionPlan:
+    """Send out a benched party member, mirroring PokéBot's RotateLead inputs.
+
+    Opening the party list moves the game into PARTY_MENU for a few frames, so
+    that state is allowed alongside BATTLE - otherwise the executor would treat
+    its own menu as an interruption.
+    """
+
+    try:
+        party_index = int(action.id.split(":", 1)[1])
+    except (IndexError, ValueError) as error:
+        raise ValueError(f"invalid battle-switch action: {action.id}") from error
+
+    def switch() -> Generator[None, None, None]:
+        from modules.battle_menuing import scroll_to_battle_action
+        from modules.battle_state import get_battle_state
+        from modules.context import context
+        from modules.memory import GameState, get_game_state
+        from modules.menuing import scroll_to_party_menu_index
+        from modules.pokemon_party import get_party_size
+
+        battle_state = get_battle_state()
+        if party_index >= get_party_size():
+            raise RuntimeError(f"cannot switch to slot {party_index}: the party is smaller")
+        active = battle_state.own_side.active_battler
+        if active is not None and party_index == active.party_index:
+            raise RuntimeError("that Pokémon is already in battle")
+        in_battle_index = battle_state.map_battle_party_index(party_index)
+        yield from scroll_to_battle_action(2)
+        for _ in range(5):
+            yield
+        context.emulator.press_button("A")
+        yield from scroll_to_party_menu_index(in_battle_index)
+        while get_game_state() == GameState.PARTY_MENU:
+            context.emulator.press_button("A")
+            yield
+
+    return ExecutionPlan(switch, frozenset({"BATTLE", "PARTY_MENU"}), frozenset({"battle", "party_menu"}))
+
+
+def _battle_item_plan(action: Action) -> ExecutionPlan:
+    """Use a bag item on the active Pokémon during battle.
+
+    Healing and PP items need a target, so the active battler's party slot is
+    passed; stat items apply to whoever is out and take no target. The bag and
+    party sub-menus move the game out of BATTLE briefly, so both are allowed.
+    """
+
+    try:
+        name = action.id.split(":", 1)[1]
+    except IndexError as error:
+        raise ValueError(f"invalid battle-item action: {action.id}") from error
+    if not name:
+        raise ValueError(f"invalid battle-item action: {action.id}")
+
+    def use_item() -> Generator[None, None, None]:
+        from modules.battle_action_selection import battle_action_use_item
+        from modules.battle_state import get_battle_state
+        from modules.items import ItemBattleUse, get_item_by_name
+
+        item = get_item_by_name(name)
+        battle_state = get_battle_state()
+        target = None
+        if item.battle_use in (ItemBattleUse.Healing, ItemBattleUse.PpRecovery):
+            active = battle_state.own_side.active_battler
+            if active is None:
+                raise RuntimeError(f"{name} needs a target Pokémon, but none is active")
+            target = active.party_index
+        yield from battle_action_use_item(battle_state, item, target)
+
+    return ExecutionPlan(
+        use_item,
+        frozenset({"BATTLE", "BAG_MENU", "PARTY_MENU"}),
+        frozenset({"battle", "bag_menu", "party_menu"}),
+    )
+
+
+def _catch_plan(action: Action) -> ExecutionPlan:
+    """Throw a Poké Ball at the wild opponent. Opens the in-battle bag only."""
+
+    try:
+        name = action.id.split(":", 1)[1]
+    except IndexError as error:
+        raise ValueError(f"invalid catch action: {action.id}") from error
+    if not name:
+        raise ValueError(f"invalid catch action: {action.id}")
+
+    def throw() -> Generator[None, None, None]:
+        from modules.battle_action_selection import battle_action_use_item
+        from modules.battle_state import get_battle_state
+        from modules.items import get_item_by_name
+
+        yield from battle_action_use_item(get_battle_state(), get_item_by_name(name), None)
+
+    return ExecutionPlan(throw, frozenset({"BATTLE", "BAG_MENU"}), frozenset({"battle", "bag_menu"}))
+
+
+ACTION_EXECUTORS.update({"setup": _setup_plan, "dialogue": _dialogue_plan,
+                         "heal": _heal_plan, "battle-run": _battle_run_plan,
+                         "interact": _interact_plan, "battle-switch": _battle_switch_plan,
+                         "battle-item": _battle_item_plan, "catch": _catch_plan})
+
+
+def _answer_plan(action: Action) -> ExecutionPlan:
+    answer = action.id.partition(':')[2]
+    if answer not in {'yes', 'no'}:
+        raise ValueError('answer must be yes or no')
+
+    def answer_question():
+        from modules.modes.util.tasks_scripts import wait_for_yes_no_question
+        yield from wait_for_yes_no_question(answer.title())
+
+    return ExecutionPlan(answer_question, frozenset({'OVERWORLD'}), frozenset({'yes_no', 'script', 'none'}))
+
+
+def _shop_plan(action: Action) -> ExecutionPlan:
+    def shop():
+        from modules.context import context
+        from modules.tasks import task_is_active
+        if action.id == 'shop-exit':
+            while task_is_active('Task_ShopMenu'):
+                context.emulator.press_button('B')
+                yield
+        else:
+            from modules.items import get_item_by_name
+            from modules.modes.util.higher_level_actions import buy_in_shop
+            _, name, quantity = action.id.split(':')
+            if int(quantity) != 1:
+                raise ValueError('buy one item per decision')
+            yield from buy_in_shop([(get_item_by_name(name), 1)])
+
+    return ExecutionPlan(shop, frozenset({'OVERWORLD', 'UNKNOWN'}), frozenset({'shop', 'script', 'none', 'yes_no'}))
+
+
+def _forced_switch_plan(action: Action) -> ExecutionPlan:
+    index = int(action.id.partition(':')[2])
+
+    def switch():
+        from modules.context import context
+        from modules.memory import get_game_state, GameState
+        from modules.menuing import scroll_to_party_menu_index
+        from modules.pokemon_party import get_party
+        party = get_party()
+        if index not in range(len(party)) or party[index].current_hp <= 0 or party[index].is_egg:
+            raise ValueError('replacement must be a healthy party member')
+        # In PARTY_MENU the party is already in battle order; do not map twice.
+        yield from scroll_to_party_menu_index(index)
+        while get_game_state() is GameState.PARTY_MENU:
+            context.emulator.press_button('A')
+            yield
+
+    return ExecutionPlan(switch, frozenset({'PARTY_MENU', 'BATTLE'}), frozenset({'forced_switch', 'party_menu', 'battle'}))
+
+
+def _learn_move_plan(action: Action) -> ExecutionPlan:
+    choice = action.id.partition(':')[2]
+    index = 4 if choice == 'skip' else int(choice)
+    if index not in range(5):
+        raise ValueError('invalid move replacement')
+
+    def learn():
+        from modules.context import context
+        from modules.battle_move_replacing import (
+            get_learn_move_state, LearnMoveState, _get_move_selection_cursor,
+        )
+        # The upstream handler only consults its strategy at the first prompt.
+        # Read the same upstream state/cursor here so a resumed selection still
+        # honors the move the player chose, including cancelling a prior decline.
+        while True:
+            phase = get_learn_move_state()
+            if phase is LearnMoveState.DialogueNotActive:
+                return
+            if phase is LearnMoveState.AskWhetherToLearn:
+                button = 'B' if index == 4 else 'A'
+            elif phase is LearnMoveState.ConfirmCancellation:
+                button = 'A' if index == 4 else 'B'
+            elif phase is LearnMoveState.SelectMoveToReplace:
+                cursor = _get_move_selection_cursor()
+                button = 'Down' if cursor < index else 'Up' if cursor > index else 'A'
+            else:
+                button = 'B'
+            context.emulator.press_button(button)
+            yield
+            if button in {'Up', 'Down'}:
+                yield
+
+    return ExecutionPlan(learn, frozenset({'BATTLE', 'EVOLUTION', 'UNKNOWN', 'POKEMON_SUMMARY_SCREEN', 'PARTY_MENU'}),
+                         frozenset({'learn_move', 'battle', 'evolution', 'pokemon_summary_screen', 'party_menu', 'none'}))
+
+
+def _evolution_plan(action: Action) -> ExecutionPlan:
+    choice = action.id.partition(':')[2]
+    if choice not in {'yes', 'no'}:
+        raise ValueError('invalid evolution choice')
+
+    def evolve():
+        from modules.context import context
+        from modules.tasks import task_is_active
+        from modules.battle_move_replacing import get_learn_move_state, LearnMoveState
+        while task_is_active('Task_EvolutionScene'):
+            # Evolution can immediately teach a move. End this choice there so
+            # the player, not an upstream default strategy, picks what to forget.
+            if get_learn_move_state() is LearnMoveState.AskWhetherToLearn:
+                return
+            context.emulator.press_button('A' if choice == 'yes' else 'B')
+            yield
+
+    return ExecutionPlan(evolve, frozenset({'EVOLUTION', 'BATTLE', 'OVERWORLD'}),
+                         frozenset({'evolution', 'learn_move', 'battle', 'none'}))
+
+
+def _field_item_plan(action: Action) -> ExecutionPlan:
+    _, name, slot = action.id.split(':')
+    index = int(slot)
+    from jev_plays_emerald.gameplay import FIELD_HEALING_ITEMS
+    if name not in FIELD_HEALING_ITEMS:
+        raise ValueError('unsupported field item')
+
+    def use():
+        from modules.context import context
+        from modules.items import get_item_by_name, get_item_bag
+        from modules.memory import get_game_state, GameState
+        from modules.menuing import StartMenuNavigator, scroll_to_party_menu_index
+        from modules.modes.util.items import scroll_to_item_in_bag
+        from modules.pokemon_party import get_party
+        from modules.player import player_avatar_is_controllable
+
+        item = get_item_by_name(name)
+        party = get_party()
+        if index not in range(len(party)) or not 0 < party[index].current_hp < party[index].total_hp:
+            raise ValueError('healing item needs a living injured target')
+        before_quantity = get_item_bag().quantity_of(item)
+        before_hp = party[index].current_hp
+        if before_quantity <= 0:
+            raise ValueError('item is not in the bag')
+        yield from StartMenuNavigator('BAG').step()
+        yield from scroll_to_item_in_bag(item)
+        while get_game_state() is not GameState.PARTY_MENU:
+            context.emulator.press_button('A')
+            yield
+        yield from scroll_to_party_menu_index(index)
+        while get_item_bag().quantity_of(item) == before_quantity:
+            context.emulator.press_button('A')
+            yield
+        while get_game_state() is not GameState.OVERWORLD or not player_avatar_is_controllable():
+            context.emulator.press_button('B')
+            yield
+        if get_party()[index].current_hp <= before_hp:
+            raise RuntimeError('healing item was consumed without restoring target HP')
+
+    return ExecutionPlan(use, frozenset({'OVERWORLD', 'UNKNOWN', 'BAG_MENU', 'PARTY_MENU'}),
+                         frozenset({'none', 'start', 'bag_menu', 'party_menu'}))
+
+
+ACTION_EXECUTORS.update({'answer': _answer_plan, 'shop-buy': _shop_plan, 'shop-exit': _shop_plan,
+                         'forced-switch': _forced_switch_plan, 'learn-move': _learn_move_plan,
+                         'evolve': _evolution_plan, 'field-item': _field_item_plan})
+
+
+def _tutorial_plan(action: Action) -> ExecutionPlan:
+    def advance():
+        from modules.context import context
+        from modules.memory import GameState, get_game_state
+        from modules.battle_state import BattleType, get_battle_type
+        while get_game_state() is GameState.BATTLE and BattleType.WallyTutorial in get_battle_type():
+            context.emulator.press_button('B')
+            yield
+    return ExecutionPlan(advance, frozenset({'BATTLE', 'BATTLE_ENDING', 'OVERWORLD'}), frozenset({'battle', 'none', 'script'}))
+
+
+ACTION_EXECUTORS['tutorial'] = _tutorial_plan
+
+
+def _training_plan(action: Action) -> ExecutionPlan:
+    from .training import training_plan
+    return training_plan(action)
+
+
+ACTION_EXECUTORS["train"] = _training_plan
+
+
+def _caught_dex_plan(action: Action) -> ExecutionPlan:
+    def close():
+        from modules.context import context
+        from modules.tasks import task_is_active
+        while task_is_active('Task_HandleCaughtMonPageInput'):
+            context.emulator.press_button('B')
+            yield
+    return ExecutionPlan(close, frozenset({'UNKNOWN', 'BATTLE'}), frozenset({'none', 'battle'}))
+
+
+ACTION_EXECUTORS['caught-dex'] = _caught_dex_plan
+
+
+def _keep_species_name_plan(action: Action) -> ExecutionPlan:
+    def keep_name():
+        from modules.keyboard import get_naming_screen_data, type_in_naming_screen
+        while get_naming_screen_data() is None:
+            yield
+        # Emerald interprets an empty confirmed nickname as keeping the default.
+        # Upstream types/deletes through the keyboard and confirms with inputs.
+        yield from type_in_naming_screen("", max_length=10)
+    return ExecutionPlan(keep_name, frozenset({"NAMING_SCREEN", "UNKNOWN", "OVERWORLD", "BATTLE"}),
+                         frozenset({"none", "script", "battle", "yes_no"}))
+
+
+ACTION_EXECUTORS["nickname"] = _keep_species_name_plan

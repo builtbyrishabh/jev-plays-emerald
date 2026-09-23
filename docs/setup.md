@@ -39,8 +39,9 @@ uv run --env-file .env python -m jev_plays_emerald --rom roms/pokemon-emerald.gb
 
 The `.env` file must define `AI_GATEWAY_API_KEY`. `Jev Emerald` makes model
 requests only when two or more semantic actions are legal. It keeps emulator
-input neutral while one request is pending, retries only timeouts, HTTP 429,
-and HTTP 5xx responses twice, then pauses visibly. Requests and responses are
+input neutral while one request is pending, retries timeouts, malformed provider
+responses, HTTP 429, and HTTP 5xx responses twice, then pauses visibly. Invalid
+requests and authentication failures stop immediately. Requests and responses are
 written to `runs/decisions.jsonl` without HTTP headers or credentials.
 
 Then open <http://127.0.0.1:8888/jev/index.html>. The live viewer shows game frames, decisions, HP, progress, and pause/resume controls. The underlying endpoints are:
@@ -93,7 +94,7 @@ it is separate from the subsequent continuous New Game evidence in [results](res
 
 ## Opening and checkpoints
 
-A fresh profile starts the configured opening: male player named JEV, default 10:00 AM clock, and no starter nickname. Jev chooses the starter. The mode stops after proving the first Route 103 rival victory; post-rival progression is outside this slice.
+A fresh profile starts the configured opening: male player named Jev, default 10:00 AM clock, and no starter nickname. Jev chooses the starter. The default `--target first-gym` continues toward the Stone Badge; `--target rival` stops at the original rival victory. See [first-gym capabilities and evidence](first-gym.md).
 
 Use a new `--profile NAME` to start separately without changing an existing save. Upstream profile saves are stored under `.cache/pokebot-gen3/profiles/NAME/`. To use a checkpoint, create a separate profile with `--check`, stop that profile's emulator, and place your own normally generated save state at its `current_state.ss1`. Label checkpoint runs explicitly; a pre-existing rival flag cannot count as a new completion.
 

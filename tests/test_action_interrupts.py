@@ -108,6 +108,22 @@ def test_unexpected_menu_interrupts_navigation(navigation_fixture) -> None:
     assert navigation_fixture.held_buttons == set()
 
 
+def test_an_interruption_names_the_script_that_took_over(navigation_fixture) -> None:
+    """"A cutscene played" and "the game refused" are the same line without it."""
+
+    run = navigation_fixture.begin_walk()
+    assert next(run) is None
+
+    navigation_fixture.boundary.state = FrameState(
+        "OVERWORLD", "script", scripts=("LittlerootTown_EventScript_NeedPokemonTriggerLeft",)
+    )
+
+    assert next(run) is Outcome.INTERRUPTED
+    assert navigation_fixture.executor.last_reason == (
+        "unexpected menu: script (LittlerootTown_EventScript_NeedPokemonTriggerLeft)"
+    )
+
+
 def test_navigation_replans_twice_then_fails() -> None:
     boundary = FakeFrameBoundary()
     attempts = 0
@@ -135,7 +151,7 @@ def test_navigation_replans_twice_then_fails() -> None:
     assert next(run) is Outcome.FAILED
     assert attempts == 3
     assert boundary.held_buttons == set()
-    assert executor.failure_reason == "navigation remained blocked after 2 replans"
+    assert executor.last_reason == "navigation remained blocked after 2 replans"
 
 
 def test_timeout_fails_and_releases_input() -> None:
@@ -157,7 +173,7 @@ def test_timeout_fails_and_releases_input() -> None:
     assert next(run) is None
     assert next(run) is Outcome.FAILED
     assert boundary.held_buttons == set()
-    assert executor.failure_reason == "action exceeded 2 frames"
+    assert executor.last_reason == "action exceeded 2 frames"
 
 
 def test_stale_context_is_rejected_before_input() -> None:
@@ -178,20 +194,7 @@ def test_stale_context_is_rejected_before_input() -> None:
 
     assert next(run) is Outcome.FAILED
     assert started is False
-    assert executor.failure_reason == "action context changed before execution"
-
-
-def test_interrupted_goal_must_be_legal_in_the_new_context(navigation_fixture) -> None:
-    run = navigation_fixture.begin_walk()
-    assert next(run) is None
-    navigation_fixture.enter_battle()
-    assert next(run) is Outcome.INTERRUPTED
-
-    new_action = Action("walk:0:16:8:7", "Walk north", "overworld:route101:after-battle")
-    unrelated = Action("talk:3", "Talk to trainer", new_action.context_id)
-
-    assert navigation_fixture.executor.revalidate_interrupted([unrelated]) is None
-    assert navigation_fixture.executor.revalidate_interrupted([unrelated, new_action]) == new_action
+    assert executor.last_reason == "action context changed before execution"
 
 
 def test_observation_context_ignores_movement_frames_but_changes_at_a_menu() -> None:
@@ -347,12 +350,14 @@ def test_battle_actions_use_the_actual_active_battler_after_a_switch(monkeypatch
                 total_hp=20,
                 status_condition=SimpleNamespace(name="Healthy"),
                 moves=(move, None, None, None),
+                is_egg=False,
             )
 
         from modules import tasks
         from modules.battle_strategies._util import BattleStrategyUtil
         monkeypatch.setattr(memory, "get_event_var", lambda _: 0)
-        monkeypatch.setattr(player, "get_player", lambda: SimpleNamespace(gender="male"))
+        monkeypatch.setattr(memory, "read_symbol", lambda *args, **kwargs: bytes([1, 0, 0, 2]))
+        monkeypatch.setattr(player, "get_player", lambda: SimpleNamespace(gender="male", money=3000))
         monkeypatch.setattr(tasks, "get_tasks", lambda: ())
         monkeypatch.setattr(tasks, "get_global_script_context", lambda: SimpleNamespace(is_active=False))
         monkeypatch.setattr(BattleStrategyUtil, "get_escape_chance", lambda _: 0)
@@ -371,6 +376,7 @@ def test_battle_actions_use_the_actual_active_battler_after_a_switch(monkeypatch
             "get_battle_state",
                 lambda: SimpleNamespace(
                     is_trainer_battle=False,
+                    type=battle_state.BattleType(0),
                     own_side=SimpleNamespace(
                         active_battler=SimpleNamespace(
                             party_index=1,
@@ -399,8 +405,12 @@ def test_battle_actions_use_the_actual_active_battler_after_a_switch(monkeypatch
                 ),
             ),
         )
+        # The turn menu also offers switching and the bag; the moves are the
+        # part that has to belong to whoever is actually out.
         [(action_id, label)] = [
-            (action.id, action.label) for action in legal_actions(observation)
+            (action.id, action.label)
+            for action in legal_actions(observation)
+            if action.id.startswith("battle-move:")
         ]
         assert action_id == "battle-move:0"
         assert label == (
@@ -423,6 +433,8 @@ def test_talk_allows_its_expected_script_but_interrupts_for_a_menu(monkeypatch: 
             yield
 
         monkeypatch.setattr(higher_level_actions, "talk_to_npc", talk_to_npc)
+        from modules import map as map_module
+        monkeypatch.setattr(map_module, "get_map_data_for_current_position", lambda: SimpleNamespace(objects=[]))
         executor = ActionExecutor(boundary)
         action = Action("talk:3", "Talk", boundary.context_id)
         run = executor.execute(action)
@@ -466,7 +478,6 @@ def test_mode_tracks_an_action_until_its_terminal_outcome() -> None:
     class FakeExecutor:
         current_action = None
         interrupted_action = None
-        failure_reason = None
         last_reason = None
 
         def execute(self, action):
@@ -474,9 +485,6 @@ def test_mode_tracks_an_action_until_its_terminal_outcome() -> None:
             yield None
             self.current_action = None
             yield Outcome.SUCCESS
-
-        def revalidate_interrupted(self, actions):
-            return None
 
     try:
         mode = JevEmeraldMode(observation_reader=FakeReader(), executor=FakeExecutor())

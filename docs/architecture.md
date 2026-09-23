@@ -1,5 +1,17 @@
 # Jev Plays Emerald: first playable slice
 
+The runtime now defaults to the first-gym target, with progression and controls
+described in [first-gym design and evidence](first-gym.md). The opening design
+below is historical; its rival stopping point remains available with
+`--target rival`. Normal-input execution, model ownership and completion-proof
+requirements still apply.
+
+Current implementation (22 September): Jev chooses gameplay actions, Python
+owns observations and normal-input execution, and optional stuck-only Luna
+coaching runs through the local TypeScript service and AI Gateway. See
+[planner behavior](planner-proposal.md) and [measurement workflow](benchmark.md).
+The original design below predates this opt-in coaching path.
+
 ## Goal
 
 Run the real Emerald game locally and watch Jev choose its first Pokémon and win the first rival battle. Keep the game prominent, the decision panel small, and dependencies limited to what the existing emulator integration needs.
@@ -72,6 +84,6 @@ Run focused checks at starter selection, in an injured overworld state, during a
 - Pin upstream revisions after the emulator probe and preserve applicable license notices.
 - Stop scope at the first rival victory. Full Hoenn, gyms, catching, team-building, and general exploration follow only after it works.
 
-## Current limit
+## Initial integration gate (historical)
 
 This is a design, not a verified runtime. The native mGBA/PokéBot integration is the first technical gate. No matching ROM or live API connection has been validated for this project yet.

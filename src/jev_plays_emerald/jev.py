@@ -35,10 +35,15 @@ class JevTimeoutError(JevGatewayError):
     """The bounded Jev request exceeded its configured deadline."""
 
 
+class JevResponseError(JevGatewayError):
+    """The provider returned malformed output; no action was accepted."""
+
+
 @dataclass(frozen=True)
 class TokenUsage:
     input_tokens: int | None = None
     output_tokens: int | None = None
+    cached_input_tokens: int | None = None
 
 
 @dataclass(frozen=True)

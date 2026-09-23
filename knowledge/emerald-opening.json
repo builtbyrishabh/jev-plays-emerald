@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "source": "https://bulbapedia.bulbagarden.net/wiki/Walkthrough:Pok%C3%A9mon_Emerald/Part_1",
+  "first_gym_sources": [
+    "https://github.com/pret/pokeemerald/blob/master/data/maps/PetalburgCity_Gym/scripts.inc",
+    "https://github.com/pret/pokeemerald/blob/master/data/maps/PetalburgWoods/scripts.inc",
+    "https://github.com/pret/pokeemerald/blob/master/data/maps/RustboroCity_Gym/scripts.inc"
+  ],
+  "stages": {
+    "meet_neighbor": [
+      "Visit the neighbor's house, go upstairs, and inspect the item on the floor so the rival appears.",
+      "The male player is Brendan and the rival is May; the female player is May and the rival is Brendan."
+    ],
+    "rescue_birch": [
+      "After meeting the rival, leave Littleroot to the north and reach Route 101 for Birch's rescue.",
+      "Choose a starter from Birch's bag during the rescue encounter."
+    ],
+    "reach_rival": [
+      "After Birch's lab scene, cross Route 101 and Oldale Town to reach the rival on Route 103."
+    ],
+    "receive_pokedex": [
+      "Return route: Route 103 -> SOUTH to Oldale -> SOUTH to Route 101 -> SOUTH to Littleroot -> Professor Birch's Lab. When already on Route 101, Oldale is NORTH behind you; continue SOUTH toward Birch.",
+      "Speak with Professor Birch and the rival to receive the Pokedex and Poke Balls. The rival victory is a milestone, not the end of the first-gym mission."
+    ],
+    "visit_petalburg": [
+      "Travel NORTH from Littleroot through Route 101 to Oldale, then WEST through Route 102 to Petalburg City. On Route 101, Littleroot is SOUTH behind you; Oldale is NORTH ahead.",
+      "Enter Petalburg Gym and talk to Norman near its entrance to begin Wally's catching tutorial. This is a story visit, not your first gym battle.",
+      "After the tutorial returns to the gym, finish Norman's dialogue. Then travel west to Route 104."
+    ],
+    "cross_woods": [
+      "From Petalburg City travel west to Route 104, then enter Petalburg Woods in the north of the southern route section.",
+      "Walk through the woods, help the Devon employee against Team Aqua and continue north. Normal trainer and wild battles provide experience.",
+      "Heal at Petalburg before the journey if badly injured. Use supplies or return to a center when necessary."
+    ],
+    "first_gym": [
+      "Leave Petalburg Woods through the north exit, then follow northern Route 104 and its bridge to Rustboro City. Different Route 104 exits reach different parts of the same map.",
+      "Roxanne leads Rustboro Gym and uses Rock-type Pokemon. Water and Grass moves are useful; consult the Pokemon reference for your party's moves and evolutions.",
+      "Heal at Rustboro's Pokemon Center before challenging the gym. Fight available trainers or wild Pokemon to prepare; do not repeatedly rematch with an exhausted or underprepared party.",
+      "Choose whether to train, catch a useful teammate or buy healing supplies. Inside the gym, navigate around obstacles and talk to trainers and Roxanne. Earning the Stone Badge completes this mission."
+    ]
+  }
+}
