@@ -6,7 +6,9 @@ Jev chooses every move of the game: which door to walk through, who to talk to, 
 
 ## Run locally
 
-The verified target is Apple Silicon macOS, Python 3.13, and the unmodified English Emerald ROM with SHA-1 `f3ae088181bf583e55daf962a92bb46f4f1d07b7`.
+The verified target is Apple Silicon macOS, Python 3.13, and the unmodified English Emerald ROM with SHA-1 `f3ae088181bf583e55daf962a92bb46f4f1d07b7`. You need your own legally obtained ROM; none is included.
+
+Prerequisites: [Homebrew](https://brew.sh), [uv](https://docs.astral.sh/uv/), Python 3.13, Node.js with built-in TypeScript support (verified on 26) and pnpm for the decision service, and a [Vercel AI Gateway](https://vercel.com/ai-gateway) API key.
 
 ```bash
 brew install mgba
@@ -59,7 +61,6 @@ does not count as a new win.
 See [measured results](docs/results.md) for repeatability, failures, costs, and remaining limitations. A working integration does not establish that Jev outperforms deterministic rules.
 
 - [Architecture](docs/architecture.md)
-- [Implementation plan](docs/superpowers/plans/2026-09-20-emerald-starter-rival.md)
 - [Reuse decisions](docs/reuse.md)
 - [Vercel gateway integration](docs/jev-gateway.md)
 - [TypeScript decision service](docs/decision-service.md)
@@ -71,3 +72,13 @@ Fresh, bounded comparison runs and response-level token reports are available
 through [the benchmark workflow](docs/benchmark.md). The
 [post notes](docs/post-notes.md) distinguish measured results from claims the
 experiment cannot support.
+
+## License
+
+GPL-3.0-or-later; see [LICENSE](LICENSE). This project patches and builds on
+[PokéBot Gen3](https://github.com/40Cakes/pokebot-gen3) (GPL-3.0), which the
+bootstrap downloads at a pinned revision.
+
+Pokémon and Pokémon Emerald are trademarks of Nintendo, Creatures Inc. and GAME
+FREAK inc. This is an unofficial fan project, not affiliated with or endorsed by
+them. It does not distribute any ROM or game assets.

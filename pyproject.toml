@@ -3,6 +3,7 @@ name = "jev-plays-emerald"
 version = "0.1.0"
 description = "Watch Jev choose a starter and play Pokemon Emerald live"
 requires-python = ">=3.13,<3.14"
+license = "GPL-3.0-or-later"
 dependencies = [
     "aiohttp==3.10.11",
     "aiortc==1.10.1",
